@@ -1,0 +1,521 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns="http://maven.apache.org/POM/4.0.0"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <description>Enterprise Lease Contract Management Service</description>
+  <groupId>com.dodaso.ecosystem.elcm.service</groupId>
+  <artifactId>elcm-service</artifactId>
+  <modelVersion>4.0.0</modelVersion>
+  <packaging>jar</packaging>
+  <version>${revision}</version>
+
+  <parent>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <groupId>org.springframework.boot</groupId>
+    <relativePath/>
+    <!-- <version>3.4.10</version> lookup parent from repository -->
+    <version>3.4.10</version>
+  </parent>
+
+  <profiles>
+    <profile>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
+      <id>local</id>
+      <properties>
+        <activatedProperties>local</activatedProperties>
+      </properties>
+    </profile>
+    <profile>
+      <id>adev</id>
+      <properties>
+        <activatedProperties>adev</activatedProperties>
+      </properties>
+    </profile>
+    <profile>
+      <id>bdev</id>
+      <properties>
+        <activatedProperties>bdev</activatedProperties>
+      </properties>
+    </profile>
+    <profile>
+      <id>dit</id>
+      <properties>
+        <activatedProperties>dit</activatedProperties>
+      </properties>
+    </profile>
+    <profile>
+      <id>sit</id>
+      <properties>
+        <activatedProperties>sit</activatedProperties>
+      </properties>
+    </profile>
+    <profile>
+      <id>uat</id>
+      <properties>
+        <activatedProperties>uat</activatedProperties>
+      </properties>
+    </profile>
+    <profile>
+      <id>prod</id>
+      <properties>
+        <activatedProperties>prod</activatedProperties>
+      </properties>
+    </profile>
+  </profiles>
+
+  <properties>
+    <!--    <build.number>SNAPSHOT</build.number>-->
+    <java.version>21</java.version>
+    <revision>1.0.0-SNAPSHOT</revision>
+  </properties>
+
+  <build>
+    <extensions>
+      <extension>
+        <artifactId>s3-storage-wagon</artifactId>
+        <groupId>com.gkatzioura.maven.cloud</groupId>
+        <version>2.0</version>
+      </extension>
+    </extensions>
+
+    <plugins>
+      <plugin>
+        <artifactId>maven-resources-plugin</artifactId>
+        <executions>
+          <execution>
+            <configuration>
+              <outputDirectory>${basedir}/target/classes</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${basedir}/src/main/resources</directory>
+                  <includes>
+                    <include>dodaso_keystore.p12</include>
+                    <include>dodaso_truststore.p12</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <id>copy-resource-one</id>
+            <phase>generate-sources</phase>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <configuration>
+              <skip>true</skip>
+            </configuration>
+            <goals>
+              <goal>repackage</goal>
+            </goals>
+            <id>repackage</id>
+          </execution>
+        </executions>
+        <groupId>org.springframework.boot</groupId>
+      </plugin>
+
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <source>21</source>
+          <target>21</target>
+        </configuration>
+        <groupId>org.apache.maven.plugins</groupId>
+      </plugin>
+
+      <!--			<plugin>
+        <groupId>com.github.ulisesbocchio</groupId>
+        <artifactId>jasypt-maven-plugin</artifactId>
+        <version>3.0.5</version>
+      </plugin>-->
+
+      <plugin>
+        <artifactId>aspectj-maven-plugin</artifactId>
+        <configuration>
+          <complianceLevel>21</complianceLevel>
+          <forceAjcCompile>true</forceAjcCompile>
+          <proc>none</proc>
+          <showWeaveInfo>true</showWeaveInfo>
+          <source>21</source>
+          <sources/>
+          <target>21</target>
+          <weaveDirectories>
+            <weaveDirectory>
+              ${project.build.directory}/classes/com/dodaso/ecosystem/elcm/controller
+            </weaveDirectory>
+          </weaveDirectories>
+        </configuration>
+        <!--<version>1.14.0</version>-->
+        <dependencies>
+          <dependency>
+            <artifactId>aspectjtools</artifactId>
+            <groupId>org.aspectj</groupId>
+            <version>1.9.22.1</version>
+            <!--Byoung: 10/10/24 <version>1.9.19</version>-->
+          </dependency>
+        </dependencies>
+        <groupId>org.codehaus.mojo</groupId>
+        <!--<executions>
+          <execution>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+          </execution>
+        </executions>-->
+        <version>1.15.0</version>
+      </plugin>
+
+      <!--            <plugin>-->
+      <!--                <groupId>org.hibernate.orm.tooling</groupId>-->
+      <!--                <artifactId>hibernate-enhance-maven-plugin</artifactId>-->
+      <!--                <version>5.6.12.Final</version>-->
+      <!--                <executions>-->
+      <!--                    <execution>-->
+      <!--                        <configuration>-->
+      <!--                            <failOnError>true</failOnError>-->
+      <!--                            <enableLazyInitialization>true</enableLazyInitialization>-->
+      <!--                        </configuration>-->
+      <!--                        <goals>-->
+      <!--                            <goal>enhance</goal>-->
+      <!--                        </goals>-->
+      <!--                    </execution>-->
+      <!--                </executions>-->
+      <!--            </plugin>-->
+
+      <!--            <plugin>-->
+      <!--                <groupId>com.spotify</groupId>-->
+      <!--                <artifactId>dockerfile-maven-plugin</artifactId>-->
+      <!--                <version>1.4.13</version>-->
+      <!--                <configuration>-->
+      <!--
+      <repository>${docker.image.prefix}/${docker.image.artifactId}</repository>-->
+      <!--                    <buildArgs>-->
+      <!--                        <JAR_FILE>target/${docker.image.artifactId}.jar</JAR_FILE>-->
+      <!--                    </buildArgs>-->
+      <!--                </configuration>-->
+      <!--            </plugin>-->
+
+      <!-- Docker Plugin -->
+      <!--
+            <plugin>
+            <groupId>com.spotify</groupId>
+            <artifactId>dockerfile-maven-plugin</artifactId>
+            <version>1.4.13</version>
+            <executions>
+                <execution>
+                    <id>default</id>
+                    <goals>
+                        <goal>build</goal>
+                        <goal>push</goal>
+                    </goals>
+                </execution>
+            </executions>
+                <configuration>
+      <repository>developer.okta.com/microservice-docker-${project.artifactId}</repository>
+                    <tag>${project.version}</tag>
+                    <buildArgs>
+                        <JAR_FILE>${project.build.finalName}.jar</JAR_FILE>
+                    </buildArgs>
+                </configuration>
+            </plugin>
+            -->
+
+      <plugin>
+        <artifactId>hibernate-enhance-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <configuration>
+              <enableAssociationManagement>true</enableAssociationManagement>
+              <enableDirtyTracking>true</enableDirtyTracking>
+              <enableLazyInitialization>true</enableLazyInitialization>
+              <failOnError>true</failOnError>
+            </configuration>
+            <goals>
+              <goal>enhance</goal>
+            </goals>
+            <phase>process-classes</phase>
+          </execution>
+        </executions>
+        <groupId>org.hibernate.orm.tooling</groupId>
+        <version>6.5.3.Final</version>
+      </plugin>
+
+      <!--<plugin>
+        <groupId>github.ulisesbocchio</groupId>
+        <artifactId>jasypt-maven-plugin</artifactId>
+        <version>3.0.0</version>
+      </plugin>-->
+    </plugins>
+
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+        <excludes>
+          <exclude>dodaso_keystore.p12</exclude>
+          <exclude>dodaso_truststore.p12</exclude>
+        </excludes>
+        <filtering>true</filtering>
+      </resource>
+    </resources>
+  </build>
+
+  <dependencies>
+    <dependency>
+      <artifactId>spring-boot-starter-web</artifactId>
+      <groupId>org.springframework.boot</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+      <groupId>org.springframework.boot</groupId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+    <dependency>
+      <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+      <exclusions>
+        <exclusion>
+          <artifactId>commons-logging</artifactId>
+          <groupId>commons-logging</groupId>
+        </exclusion>
+      </exclusions>
+      <groupId>org.springframework.cloud</groupId>
+      <version>4.2.0</version>
+    </dependency>
+    <dependency>
+      <artifactId>spring-boot-starter-security</artifactId>
+      <groupId>org.springframework.boot</groupId>
+    </dependency>
+    <!--<dependency>
+      <groupId>com.github.ulisesbocchio</groupId>
+      <artifactId>jasypt-spring-boot-starter</artifactId>
+      <version>3.0.5</version>
+    </dependency>-->
+    <dependency>
+      <artifactId>spring-data-jpa</artifactId>
+      <groupId>org.springframework.data</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>spring-boot-starter-cache</artifactId>
+      <groupId>org.springframework.boot</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>caffeine</artifactId>
+      <groupId>com.github.ben-manes.caffeine</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>spring-boot-configuration-processor</artifactId>
+      <groupId>org.springframework.boot</groupId>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <artifactId>spring-boot-starter-aop</artifactId>
+      <groupId>org.springframework.boot</groupId>
+      <version>3.5.16</version>
+    </dependency>
+    <dependency>
+      <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+      <groupId>org.springdoc</groupId>
+      <version>2.5.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.microsoft.azure</groupId>
+      <artifactId>msal4j</artifactId>
+      <version>1.19.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-webflux</artifactId>
+    </dependency>
+    <dependency>
+      <artifactId>liquibase-core</artifactId>
+      <groupId>org.liquibase</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>HikariCP</artifactId>
+      <groupId>com.zaxxer</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>p6spy</artifactId>
+      <groupId>p6spy</groupId>
+      <version>3.9.1</version>
+    </dependency>
+    <dependency>
+      <artifactId>mysql-connector-j</artifactId>
+      <groupId>com.mysql</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>jakarta.persistence-api</artifactId>
+      <groupId>jakarta.persistence</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>hibernate-core</artifactId>
+      <exclusions>
+        <exclusion>
+          <artifactId>jandex</artifactId>
+          <groupId>org.jboss</groupId>
+        </exclusion>
+      </exclusions>
+      <groupId>org.hibernate.orm</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>jakarta.transaction-api</artifactId>
+      <groupId>jakarta.transaction</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>lombok</artifactId>
+      <groupId>org.projectlombok</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>commons-collections4</artifactId>
+      <groupId>org.apache.commons</groupId>
+      <version>4.4</version>
+    </dependency>
+    <dependency>
+      <artifactId>big-math</artifactId>
+      <groupId>ch.obermuhlner</groupId>
+      <version>2.3.2</version>
+    </dependency>
+    <dependency>
+      <artifactId>joda-time</artifactId>
+      <groupId>joda-time</groupId>
+      <version>2.12.2</version>
+    </dependency>
+    <dependency>
+      <artifactId>jackson-datatype-joda</artifactId>
+      <groupId>com.fasterxml.jackson.datatype</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>jackson-databind</artifactId>
+      <groupId>com.fasterxml.jackson.core</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>xirr</artifactId>
+      <groupId>org.decampo</groupId>
+      <version>1.2</version>
+    </dependency>
+    <dependency>
+      <artifactId>protonpack</artifactId>
+      <groupId>com.codepoetics</groupId>
+      <version>1.16</version>
+    </dependency>
+    <dependency>
+      <artifactId>aspectjrt</artifactId>
+      <groupId>org.aspectj</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>aspectjweaver</artifactId>
+      <groupId>org.aspectj</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>aspectjtools</artifactId>
+      <groupId>org.aspectj</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>jasypt-spring-boot-starter</artifactId>
+      <groupId>com.github.ulisesbocchio</groupId>
+      <version>3.0.5</version>
+    </dependency>
+    <dependency>
+      <artifactId>azure-storage-blob</artifactId>
+      <groupId>com.azure</groupId>
+      <version>12.35.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.angus</groupId>
+      <artifactId>angus-mail</artifactId>
+      <version>2.0.4</version>
+    </dependency>
+    <!-- <dependency>
+          <groupId>com.azure</groupId>
+          <artifactId>azure-core</artifactId>
+          <version>1.55.3</version>
+        </dependency> -->
+    <!--		<dependency>-->
+    <!--			<groupId>com.azure</groupId>-->
+    <!--			<artifactId>azure-core-http-okhttp</artifactId>-->
+    <!--			<version>1.12.10</version>-->
+    <!--			<scope>test</scope>-->
+    <!--		</dependency>-->
+    <!--		<dependency>
+          <groupId>com.azure</groupId>
+          <artifactId>azure-core-http-netty</artifactId>
+          <version>1.15.11</version>
+        </dependency>-->
+    <!--
+    <dependency>
+      <groupId>com.azure</groupId>
+      <artifactId>azure-identity</artifactId>
+      <version>1.7.0-beta.2</version>
+      <scope>compile</scope>
+    </dependency>-->
+    <dependency>
+      <groupId>com.azure</groupId>
+      <artifactId>azure-core-http-jdk-httpclient</artifactId>
+      <version>1.0.0-beta.18</version>
+    </dependency>
+    <dependency>
+      <artifactId>baseline-common</artifactId>
+      <groupId>com.dodaso.ecosystem.baseline.common</groupId>
+      <version>${revision}</version>
+    </dependency>
+    <dependency>
+      <artifactId>ecws-data-model</artifactId>
+      <groupId>com.dodaso.ecosystem.ecws.data.model</groupId>
+      <version>${revision}</version>
+    </dependency>
+    <dependency>
+      <artifactId>ears-data-model</artifactId>
+      <groupId>com.dodaso.ecosystem.ears.data.model</groupId>
+      <version>${revision}</version>
+    </dependency>
+  </dependencies>
+
+  <!-- Byoung: 10/10/24	<repositories>
+    <repository>
+      <id>dodaso-maven-repo-snapshot</id>
+      <url>s3://dodaso-maven-repo/snapshot</url>
+    </repository>
+    <repository>
+      <id>dodaso-maven-repo-release</id>
+      <url>s3://dodaso-maven-repo/release</url>
+    </repository>
+  </repositories>-->
+
+  <!--	<repositories>
+    <repository>
+      <id>central</id>
+      <name>Central Repository</name>
+      <url>file://C:/Users/pbk97/.m2/repository</url>
+      <layout>default</layout>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+    </repository>
+  </repositories>-->
+
+  <!-- Byoung: 10/9/24 <distributionManagement>
+    <snapshotRepository>
+      <id>dodaso-maven-repo-snapshot</id>
+      <url>s3://dodaso-maven-repo/snapshot</url>
+    </snapshotRepository>
+    <repository>
+      <id>dodaso-maven-repo-release</id>
+      <url>s3://dodaso-maven-repo/release</url>
+    </repository>
+  </distributionManagement>-->
+</project>
