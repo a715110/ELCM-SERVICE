@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <appender class="ch.qos.logback.core.ConsoleAppender" name="STDOUT">
+    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+      <Pattern>%d{yyyy-MM-dd_HH:mm:ss.SSS} %-5level %logger{36} - %msg%n
+      </Pattern>
+    </encoder>
+  </appender>
+  <appender class="ch.qos.logback.core.rolling.RollingFileAppender"
+    name="FILE">
+    <File>/development/logs/ecws-service.log</File>
+
+    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+      <Pattern>%d{yyyy-MM-dd_HH:mm:ss.SSS} [%thread] %-5level %logger{36} -
+        %msg%n
+      </Pattern>
+    </encoder>
+
+    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+      <fileNamePattern>/development/logs/archived/ecws-service.%d{yyyy-MM-dd}.%i.log.gz
+      </fileNamePattern>
+      <!-- each archived file, size max 10MB -->
+      <maxFileSize>200MB</maxFileSize>
+      <!-- total size of all archive files, if total size > 30GB, it will delete old archived file -->
+      <maxHistory>60</maxHistory>
+      <!-- 60 days to keep -->
+      <totalSizeCap>30GB</totalSizeCap>
+    </rollingPolicy>
+  </appender>
+
+  <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+  <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+  <springProfile name="local">
+    <logger additivity="false" level="DEBUG" name="com.dodaso.ecosystem">
+      <appender-ref ref="FILE"/>
+      <appender-ref ref="STDOUT"/>
+    </logger>
+
+    <logger additivity="false" level="ERROR" name="org.hibernate">
+      <appender-ref ref="FILE"/>
+      <appender-ref ref="STDOUT"/>
+    </logger>
+
+    <logger additivity="false" level="INFO" name="com.zaxxer.hikari">
+      <appender-ref ref="FILE"/>
+      <appender-ref ref="STDOUT"/>
+    </logger>
+
+    <logger additivity="false" level="ERROR" name="org.springframework">
+      <appender-ref ref="FILE"/>
+      <appender-ref ref="STDOUT"/>
+    </logger>
+
+    <logger additivity="false" level="ERROR" name="com.netflix.discovery.shared.resolver.aws">
+      <appender-ref ref="FILE"/>
+      <appender-ref ref="STDOUT"/>
+    </logger>
+
+    <root level="INFO">
+      <appender-ref ref="FILE"/>
+      <appender-ref ref="STDOUT"/>
+    </root>
+  </springProfile>
+
+  <springProfile name="adev,bdev,dit,sit,uat,prod">
+    <logger additivity="false" level="INFO" name="com.dodaso.ecosystem">
+      <appender-ref ref="FILE"/>
+      <appender-ref ref="STDOUT"/>
+    </logger>
+
+    <logger additivity="false" level="ERROR" name="org.hibernate">
+      <appender-ref ref="FILE"/>
+      <appender-ref ref="STDOUT"/>
+    </logger>
+
+    <logger additivity="false" level="INFO" name="com.zaxxer.hikari">
+      <appender-ref ref="FILE"/>
+      <appender-ref ref="STDOUT"/>
+    </logger>
+
+    <logger additivity="false" level="ERROR" name="org.springframework">
+      <appender-ref ref="FILE"/>
+      <appender-ref ref="STDOUT"/>
+    </logger>
+
+    <logger additivity="false" level="ERROR" name="com.netflix.discovery.shared.resolver.aws">
+      <appender-ref ref="FILE"/>
+      <appender-ref ref="STDOUT"/>
+    </logger>
+
+    <root level="INFO">
+      <appender-ref ref="FILE"/>
+      <appender-ref ref="STDOUT"/>
+    </root>
+  </springProfile>
+</configuration>
