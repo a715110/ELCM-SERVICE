@@ -474,6 +474,11 @@
       <version>${revision}</version>
     </dependency>
     <dependency>
+      <artifactId>common-service</artifactId>
+      <groupId>com.dodaso.ecosystem.common.service</groupId>
+      <version>${revision}</version>
+    </dependency>  
+    <dependency>
       <artifactId>ecws-data-model</artifactId>
       <groupId>com.dodaso.ecosystem.ecws.data.model</groupId>
       <version>${revision}</version>
