@@ -8,7 +8,7 @@
   </appender>
   <appender class="ch.qos.logback.core.rolling.RollingFileAppender"
     name="FILE">
-    <File>/development/logs/ecws-service.log</File>
+    <File>/development/logs/elcm-service.log</File>
 
     <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
       <Pattern>%d{yyyy-MM-dd_HH:mm:ss.SSS} [%thread] %-5level %logger{36} -
@@ -17,7 +17,7 @@
     </encoder>
 
     <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-      <fileNamePattern>/development/logs/archived/ecws-service.%d{yyyy-MM-dd}.%i.log.gz
+      <fileNamePattern>/development/logs/archived/elcm-service.%d{yyyy-MM-dd}.%i.log.gz
       </fileNamePattern>
       <!-- each archived file, size max 10MB -->
       <maxFileSize>200MB</maxFileSize>

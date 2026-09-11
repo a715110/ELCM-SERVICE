@@ -1,10 +1,13 @@
 package com.dodaso.ecosystem.elcm.controller;
 
-import com.dodaso.ecosystem.elcm.service.pipeline.PipelineMetricsService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.dodaso.ecosystem.elcm.container.cust.PipelineMetricsDTOContainer;
+import com.dodaso.ecosystem.elcm.service.pipeline.PipelineMetricsService;
+
+import lombok.RequiredArgsConstructor;
 
 /**
  * REST access to PipelineMetricsService. Package deliberately
@@ -28,7 +31,7 @@ public class PipelineMetricsController {
     private final PipelineMetricsService pipelineMetricsService;
 
     @GetMapping
-    public PipelineMetricsService.PipelineMetrics getMetrics() {
+    public PipelineMetricsDTOContainer getMetrics() {
         return pipelineMetricsService.getMetrics();
     }
 }

@@ -1,9 +1,13 @@
 package com.dodaso.ecosystem.elcm.service.pipeline;
 
-import com.dodaso.ecosystem.elcm.repository.pipeline.StagedDocumentRepository;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.dodaso.ecosystem.elcm.container.cust.PipelineMetricsDTOContainer;
+import com.dodaso.ecosystem.elcm.dto.cust.PipelineMetricsDTO;
+import com.dodaso.ecosystem.elcm.repository.pipeline.StagedDocumentRepository;
+
+import lombok.RequiredArgsConstructor;
 
 /**
  * Aggregate counts for the four top metric cards (Uploading/Validating/
@@ -26,14 +30,18 @@ public class PipelineMetricsService {
     private final StagedDocumentRepository stagedDocumentRepository;
 
     @Transactional(readOnly = true)
-    public PipelineMetrics getMetrics() {
-        return new PipelineMetrics(
+    public PipelineMetricsDTOContainer getMetrics() {
+        PipelineMetricsDTOContainer dtoContainer = new PipelineMetricsDTOContainer();
+        
+        PipelineMetricsDTO instance =  new PipelineMetricsDTO(
             (int) stagedDocumentRepository.countByStatus_Code("UPLOADING"),
             (int) stagedDocumentRepository.countByStatus_Code("VALIDATING"),
             (int) stagedDocumentRepository.countByStatus_Code("VALID"),
             (int) stagedDocumentRepository.countByStatus_Code("SUBMITTED")
         );
-    }
 
-    public record PipelineMetrics(int uploading, int validating, int valid, int submitted) {}
+        dtoContainer.setPipelineMetricsDTO(instance);
+        return dtoContainer;
+    }
+   
 }
