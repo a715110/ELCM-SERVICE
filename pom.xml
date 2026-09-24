@@ -474,8 +474,8 @@
       <version>${revision}</version>
     </dependency>
     <dependency>
-      <artifactId>common-service</artifactId>
-      <groupId>com.dodaso.ecosystem.common.service</groupId>
+      <artifactId>common-data-model</artifactId>
+      <groupId>com.dodaso.ecosystem.common.data.model</groupId>
       <version>${revision}</version>
     </dependency>  
     <dependency>

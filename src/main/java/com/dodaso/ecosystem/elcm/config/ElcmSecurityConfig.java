@@ -4,7 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 
-import com.dodaso.ecosystem.common.config.AbstractBaseSecurityConfig;
+import com.dodaso.ecosystem.baseline.common.config.AbstractBaseSecurityConfig;
 
 @Configuration
 public class ElcmSecurityConfig extends AbstractBaseSecurityConfig{
