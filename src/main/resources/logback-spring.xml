@@ -1,98 +1,80 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Shared logging configuration for every dodaso Spring Boot app (services and UIs).
+
+  Location: this app's src/main/resources/logback-spring.xml. It is IDENTICAL to the shared
+  baseline-common copy (file name comes from spring.application.name). If baseline-common
+  ships it, you can delete this per-app copy; the app's own copy wins while it exists.
+  Also make sure no plain logback.xml exists: Spring Boot picks it before logback-spring.xml.
+
+  Why "-spring": Spring Boot processes this file itself, so <springProfile> and
+  <springProperty> work and the logging.* properties (e.g. logging.pattern.level,
+  which carries the customer code) feed into the patterns below.
+
+  Profiles:
+    local  -> console + rolling file, DEBUG for com.dodaso
+    other  -> console only (containers collect stdout), INFO for com.dodaso
+-->
 <configuration>
-  <appender class="ch.qos.logback.core.ConsoleAppender" name="STDOUT">
-    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
-      <Pattern>%d{yyyy-MM-dd_HH:mm:ss.SSS} %-5level %logger{36} - %msg%n
-      </Pattern>
-    </encoder>
-  </appender>
-  <appender class="ch.qos.logback.core.rolling.RollingFileAppender"
-    name="FILE">
-    <File>/development/logs/elcm-service.log</File>
 
-    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
-      <Pattern>%d{yyyy-MM-dd_HH:mm:ss.SSS} [%thread] %-5level %logger{36} -
-        %msg%n
-      </Pattern>
-    </encoder>
-
-    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-      <fileNamePattern>/development/logs/archived/elcm-service.%d{yyyy-MM-dd}.%i.log.gz
-      </fileNamePattern>
-      <!-- each archived file, size max 10MB -->
-      <maxFileSize>200MB</maxFileSize>
-      <!-- total size of all archive files, if total size > 30GB, it will delete old archived file -->
-      <maxHistory>60</maxHistory>
-      <!-- 60 days to keep -->
-      <totalSizeCap>30GB</totalSizeCap>
-    </rollingPolicy>
-  </appender>
-
+  <!-- Spring's defaults: defines LOG_LEVEL_PATTERN from logging.pattern.level etc.
+       (console-appender.xml is NOT included: it defined the unused CONSOLE appender
+       that caused "Appender named [CONSOLE] not referenced".) -->
   <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
 
-  <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+  <!-- Log file named after the app itself, so one shared file works for every app -->
+  <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="dodaso-app"/>
+  <springProperty scope="context" name="LOG_DIR" source="logging.file.path" defaultValue="/development/logs"/>
+
+  <!-- Same layout as before; ${LOG_LEVEL_PATTERN} replaces the fixed %-5level and
+       renders as e.g. "INFO [acme]" (level + customer code, SDS Step 1 R7). -->
+  <property name="DODASO_PATTERN"
+    value="%d{yyyy-MM-dd_HH:mm:ss.SSS} ${LOG_LEVEL_PATTERN:-%5p} [%thread] %logger{36} - %msg%n"/>
+
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>${DODASO_PATTERN}</pattern>
+      <charset>UTF-8</charset>
+    </encoder>
+  </appender>
+
+  <!-- Library log levels (all profiles). No appender-refs / additivity="false" here:
+       everything flows to the root appenders, so appenders are chosen in one place. -->
+  <logger name="org.hibernate" level="ERROR"/>
+  <logger name="com.zaxxer.hikari" level="INFO"/>
+  <!-- Was ERROR. WARN keeps Spring Security and configuration warnings visible. -->
+  <logger name="org.springframework" level="WARN"/>
+  <logger name="com.netflix.discovery.shared.resolver.aws" level="ERROR"/>
 
   <springProfile name="local">
-    <logger additivity="false" level="DEBUG" name="com.dodaso.ecosystem">
-      <appender-ref ref="FILE"/>
-      <appender-ref ref="STDOUT"/>
-    </logger>
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+      <file>${LOG_DIR}/${APP_NAME}.log</file>
+      <encoder>
+        <pattern>${DODASO_PATTERN}</pattern>
+        <charset>UTF-8</charset>
+      </encoder>
+      <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+        <fileNamePattern>${LOG_DIR}/archived/${APP_NAME}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+        <maxFileSize>200MB</maxFileSize>      <!-- per archived file -->
+        <maxHistory>60</maxHistory>           <!-- days kept -->
+        <totalSizeCap>30GB</totalSizeCap>     <!-- oldest archives deleted beyond this -->
+      </rollingPolicy>
+    </appender>
 
-    <logger additivity="false" level="ERROR" name="org.hibernate">
-      <appender-ref ref="FILE"/>
-      <appender-ref ref="STDOUT"/>
-    </logger>
-
-    <logger additivity="false" level="INFO" name="com.zaxxer.hikari">
-      <appender-ref ref="FILE"/>
-      <appender-ref ref="STDOUT"/>
-    </logger>
-
-    <logger additivity="false" level="ERROR" name="org.springframework">
-      <appender-ref ref="FILE"/>
-      <appender-ref ref="STDOUT"/>
-    </logger>
-
-    <logger additivity="false" level="ERROR" name="com.netflix.discovery.shared.resolver.aws">
-      <appender-ref ref="FILE"/>
-      <appender-ref ref="STDOUT"/>
-    </logger>
+    <logger name="com.dodaso.ecosystem" level="DEBUG"/>
 
     <root level="INFO">
+      <appender-ref ref="CONSOLE"/>
       <appender-ref ref="FILE"/>
-      <appender-ref ref="STDOUT"/>
     </root>
   </springProfile>
 
-  <springProfile name="adev,bdev,dit,sit,uat,prod">
-    <logger additivity="false" level="INFO" name="com.dodaso.ecosystem">
-      <appender-ref ref="FILE"/>
-      <appender-ref ref="STDOUT"/>
-    </logger>
-
-    <logger additivity="false" level="ERROR" name="org.hibernate">
-      <appender-ref ref="FILE"/>
-      <appender-ref ref="STDOUT"/>
-    </logger>
-
-    <logger additivity="false" level="INFO" name="com.zaxxer.hikari">
-      <appender-ref ref="FILE"/>
-      <appender-ref ref="STDOUT"/>
-    </logger>
-
-    <logger additivity="false" level="ERROR" name="org.springframework">
-      <appender-ref ref="FILE"/>
-      <appender-ref ref="STDOUT"/>
-    </logger>
-
-    <logger additivity="false" level="ERROR" name="com.netflix.discovery.shared.resolver.aws">
-      <appender-ref ref="FILE"/>
-      <appender-ref ref="STDOUT"/>
-    </logger>
+  <springProfile name="!local">
+    <logger name="com.dodaso.ecosystem" level="INFO"/>
 
     <root level="INFO">
-      <appender-ref ref="FILE"/>
-      <appender-ref ref="STDOUT"/>
+      <appender-ref ref="CONSOLE"/>
     </root>
   </springProfile>
+
 </configuration>

@@ -17,59 +17,16 @@
     <version>3.5.16</version> <!-- SB3.5.16: was 3.4.13 -->
   </parent>
 
-  <profiles>
-    <profile>
-      <activation>
-        <activeByDefault>true</activeByDefault>
-      </activation>
-      <id>local</id>
-      <properties>
-        <activatedProperties>local</activatedProperties>
-      </properties>
-    </profile>
-    <profile>
-      <id>adev</id>
-      <properties>
-        <activatedProperties>adev</activatedProperties>
-      </properties>
-    </profile>
-    <profile>
-      <id>bdev</id>
-      <properties>
-        <activatedProperties>bdev</activatedProperties>
-      </properties>
-    </profile>
-    <profile>
-      <id>dit</id>
-      <properties>
-        <activatedProperties>dit</activatedProperties>
-      </properties>
-    </profile>
-    <profile>
-      <id>sit</id>
-      <properties>
-        <activatedProperties>sit</activatedProperties>
-      </properties>
-    </profile>
-    <profile>
-      <id>uat</id>
-      <properties>
-        <activatedProperties>uat</activatedProperties>
-      </properties>
-    </profile>
-    <profile>
-      <id>prod</id>
-      <properties>
-        <activatedProperties>prod</activatedProperties>
-      </properties>
-    </profile>
-  </profiles>
+  <!-- STEP1: removed the <profiles> block (local/adev/bdev/dit/sit/uat/prod). The runtime
+       profile is chosen at run time: IDE run configuration locally,
+       SPRING_PROFILES_ACTIVE=cloud in customer instances. -->
 
   <properties>
     <!--    <build.number>SNAPSHOT</build.number>-->
     <java.version>21</java.version>
     <revision>1.0.0-SNAPSHOT</revision>
     <spring-cloud.version>2025.0.3</spring-cloud.version> <!-- SB3.5.16: added -->
+    <spring-cloud-azure.version>6.5.0</spring-cloud-azure.version> <!-- STEP1: Spring Cloud Azure line for Boot 3.5.x -->
   </properties>
 
   <dependencyManagement>
@@ -79,6 +36,14 @@
         <groupId>org.springframework.cloud</groupId>
         <artifactId>spring-cloud-dependencies</artifactId>
         <version>${spring-cloud.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <!-- STEP1: Spring Cloud Azure BOM; also manages com.azure:* SDK versions -->
+      <dependency>
+        <groupId>com.azure.spring</groupId>
+        <artifactId>spring-cloud-azure-dependencies</artifactId>
+        <version>${spring-cloud-azure.version}</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
@@ -95,30 +60,7 @@
     </extensions>
 
     <plugins>
-      <plugin>
-        <artifactId>maven-resources-plugin</artifactId>
-        <executions>
-          <execution>
-            <configuration>
-              <outputDirectory>${basedir}/target/classes</outputDirectory>
-              <resources>
-                <resource>
-                  <directory>${basedir}/src/main/resources</directory>
-                  <includes>
-                    <include>dodaso_keystore.p12</include>
-                    <include>dodaso_truststore.p12</include>
-                  </includes>
-                </resource>
-              </resources>
-            </configuration>
-            <goals>
-              <goal>copy-resources</goal>
-            </goals>
-            <id>copy-resource-one</id>
-            <phase>generate-sources</phase>
-          </execution>
-        </executions>
-      </plugin>
+      <!-- STEP1: removed maven-resources-plugin. Its copy-resource-one execution packaged the keystores into the jar; in ears/iams it also set useDefaultDelimiters=true, which made Maven replace ${user.home} and other ${...} placeholders at BUILD time. -->
 
       <plugin>
         <artifactId>spring-boot-maven-plugin</artifactId>
@@ -131,6 +73,13 @@
               <goal>repackage</goal>
             </goals>
             <id>repackage</id>
+          </execution>
+        <!-- STEP1: META-INF/build-info.properties -> /actuator/info shows the release version -->
+          <execution>
+            <id>build-info</id>
+            <goals>
+              <goal>build-info</goal>
+            </goals>
           </execution>
         </executions>
         <groupId>org.springframework.boot</groupId>
@@ -145,11 +94,6 @@
         <groupId>org.apache.maven.plugins</groupId>
       </plugin>
 
-      <!--			<plugin>
-        <groupId>com.github.ulisesbocchio</groupId>
-        <artifactId>jasypt-maven-plugin</artifactId>
-        <version>3.0.5</version>
-      </plugin>-->
 
       <plugin>
         <artifactId>aspectj-maven-plugin</artifactId>
@@ -262,21 +206,30 @@
         <version>${hibernate.version}</version> <!-- SB3.5.16: was 6.5.3.Final; enhancer must match runtime Hibernate 6.6.x -->
       </plugin>
 
-      <!--<plugin>
-        <groupId>github.ulisesbocchio</groupId>
-        <artifactId>jasypt-maven-plugin</artifactId>
-        <version>3.0.0</version>
-      </plugin>-->
     </plugins>
 
+    <!-- STEP1: resources replaced. Mirrors spring-boot-starter-parent's default
+         (filter only application*.yml/yaml/properties with @..@ tokens, copy everything
+         else untouched). **/*.p12 is excluded so a keystore can never be packaged. -->
     <resources>
       <resource>
-        <directory>src/main/resources</directory>
-        <excludes>
-          <exclude>dodaso_keystore.p12</exclude>
-          <exclude>dodaso_truststore.p12</exclude>
-        </excludes>
+        <directory>${basedir}/src/main/resources</directory>
         <filtering>true</filtering>
+        <includes>
+          <include>**/application*.yml</include>
+          <include>**/application*.yaml</include>
+          <include>**/application*.properties</include>
+        </includes>
+      </resource>
+      <resource>
+        <directory>${basedir}/src/main/resources</directory>
+        <filtering>false</filtering>
+        <excludes>
+          <exclude>**/application*.yml</exclude>
+          <exclude>**/application*.yaml</exclude>
+          <exclude>**/application*.properties</exclude>
+          <exclude>**/*.p12</exclude>
+        </excludes>
       </resource>
     </resources>
   </build>
@@ -309,11 +262,7 @@
       <artifactId>spring-boot-starter-security</artifactId>
       <groupId>org.springframework.boot</groupId>
     </dependency>
-    <!--<dependency>
-      <groupId>com.github.ulisesbocchio</groupId>
-      <artifactId>jasypt-spring-boot-starter</artifactId>
-      <version>3.0.5</version>
-    </dependency>-->
+    <!-- STEP1: removed jasypt-spring-boot-starter. Database passwords now come from Key Vault (cloud) or an environment variable (local); ENC(...) values are gone. If a class imports org.jasypt or com.ulisesbocchio, restore it. -->
     <dependency>
       <artifactId>spring-data-jpa</artifactId>
       <groupId>org.springframework.data</groupId>
@@ -437,16 +386,6 @@
     </dependency>
     <!-- SB3.5.16: removed runtime aspectjtools (compiler jar; aspectjweaver covers Spring AOP) -->
     <dependency>
-      <artifactId>jasypt-spring-boot-starter</artifactId>
-      <groupId>com.github.ulisesbocchio</groupId>
-      <version>3.0.5</version>
-    </dependency>
-    <dependency>
-      <artifactId>azure-storage-blob</artifactId>
-      <groupId>com.azure</groupId>
-      <version>12.35.0</version>
-    </dependency>
-    <dependency>
       <groupId>org.eclipse.angus</groupId>
       <artifactId>angus-mail</artifactId>
       <version>2.0.4</version>
@@ -474,10 +413,16 @@
       <version>1.7.0-beta.2</version>
       <scope>compile</scope>
     </dependency>-->
+    <!-- STEP1: removed azure-core-http-jdk-httpclient 1.0.0-beta.18 (beta; the Azure starters bring the standard Netty client). -->
+    <!-- STEP1: replaces com.azure:azure-storage-blob 12.35.0. If elcm-service has no Blob code of its own (common-service owns storage), delete this dependency and the storage keys in its config. -->
     <dependency>
-      <groupId>com.azure</groupId>
-      <artifactId>azure-core-http-jdk-httpclient</artifactId>
-      <version>1.0.0-beta.18</version>
+      <groupId>com.azure.spring</groupId>
+      <artifactId>spring-cloud-azure-starter-storage-blob</artifactId>
+    </dependency>
+    <!-- STEP1: Key Vault as a Spring PropertySource (version from the Azure BOM) -->
+    <dependency>
+      <groupId>com.azure.spring</groupId>
+      <artifactId>spring-cloud-azure-starter-keyvault-secrets</artifactId>
     </dependency>
     <dependency>
       <artifactId>baseline-common</artifactId>
@@ -539,4 +484,4 @@
       <url>s3://dodaso-maven-repo/release</url>
     </repository>
   </distributionManagement>-->
-</project>
+</project>

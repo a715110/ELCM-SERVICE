@@ -4,10 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cache.annotation.EnableCaching;
 
-import com.ulisesbocchio.jasyptspringboot.annotation.EnableEncryptableProperties;
-
 @SpringBootApplication(scanBasePackages = {"com.dodaso.ecosystem"})
-@EnableEncryptableProperties
 @EnableCaching
 public class ELCMServiceApplication {
 
