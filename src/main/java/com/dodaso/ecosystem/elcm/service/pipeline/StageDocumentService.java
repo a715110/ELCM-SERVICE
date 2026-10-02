@@ -161,8 +161,14 @@ public class StageDocumentService {
         String assignee = doc.getAssigneeId() != null && !doc.getAssigneeId().isBlank()
             ? doc.getAssigneeId() : "Unassigned";
         String uploadedAt = doc.getUploadedAt() != null ? doc.getUploadedAt().format(UPLOADED_AT_FORMAT) : "";
+        // ADDED 2026-10-01 -- see StagedDocumentRow's Javadoc: null here just
+        // means "not yet linked to a record" (e.g. a NOT_SURE submission),
+        // not an error -- findAllWithWorkspaceAndTargetRecord()'s JOIN FETCH
+        // already makes this a safe, non-lazy read either way.
+        Long targetRecordId = doc.getTargetRecord() != null ? doc.getTargetRecord().getId() : null;
 
-        return new StagedDocumentDraft(doc.getFileUploadId(), workspace, record, assignee, uploadedAt);
+        return new StagedDocumentDraft(doc.getId(), doc.getFileUploadId(), workspace, record, assignee, uploadedAt,
+            targetRecordId);
     }
 
     /**
@@ -205,8 +211,8 @@ public class StageDocumentService {
         String fileName = fileUpload.getFileName();
         String type = deriveFileType(fileName);
 
-        return new StagedDocumentRow(fileName, type, draft.workspace(), draft.record(), draft.assignee(),
-            draft.uploadedAt());
+        return new StagedDocumentRow(draft.id(), fileName, type, draft.workspace(), draft.record(), draft.assignee(),
+            draft.uploadedAt(), draft.fileUploadId(), draft.targetRecordId());
     }
 
     private String deriveFileType(String fileName) {
@@ -389,8 +395,8 @@ public class StageDocumentService {
      * -- see class Javadoc phase 1/2 split. Package-private record local to
      * this service; never returned outside it.
      */
-    private record StagedDocumentDraft(Long fileUploadId, String workspace, String record, String assignee,
-                                       String uploadedAt) {
+    private record StagedDocumentDraft(Long id, Long fileUploadId, String workspace, String record, String assignee,
+                                       String uploadedAt, Long targetRecordId) {
     }
 
 }

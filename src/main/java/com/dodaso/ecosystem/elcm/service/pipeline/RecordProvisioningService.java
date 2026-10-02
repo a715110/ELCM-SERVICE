@@ -6,7 +6,14 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dodaso.ecosystem.elcm.dto.AddressDTO;
+import com.dodaso.ecosystem.elcm.dto.ContractRecordDTO;
+import com.dodaso.ecosystem.elcm.dto.CounterpartyDTO;
+import com.dodaso.ecosystem.elcm.dto.LkpContractRecordStatusDTO;
+import com.dodaso.ecosystem.elcm.dto.LkpContractTypeDTO;
+import com.dodaso.ecosystem.elcm.dto.PropertyDTO;
 import com.dodaso.ecosystem.elcm.dto.StagedDocumentDTO;
+import com.dodaso.ecosystem.elcm.dto.WorkspaceDTO;
 import com.dodaso.ecosystem.elcm.entity.lookup.LkpContractRecordStatus;
 import com.dodaso.ecosystem.elcm.entity.lookup.LkpContractType;
 import com.dodaso.ecosystem.elcm.entity.pipeline.ContractRecord;
@@ -161,6 +168,90 @@ public class RecordProvisioningService {
             .stream()
             .map(r -> new ContractRecordOptionRow(r.getId(), r.getRecordCode()))
             .collect(Collectors.toList());
+    }
+
+    /**
+     * ADDED 2026-10-01 -- backs ContractRecordController's GET /{id}, which
+     * in turn backs the Stage Documents dashboard's new file-preview eye
+     * icon: the "record details" half of that split view needs more than
+     * ContractRecordOptionRow's bare id/recordCode (search()'s row, used
+     * only by the Existing Record autocomplete), so this builds a fully
+     * populated ContractRecordDTO instead -- workspace/contractType/status/
+     * counterparty (all LAZY on the entity, see ContractRecord's Javadoc)
+     * plus property/address (fetched separately via
+     * PropertyRepository.findByContractRecord_Id(), since Property, not
+     * ContractRecord, owns that FK).
+     *
+     * @Transactional(readOnly = true) keeps the Hibernate session open
+     * across all four LAZY association reads below, same reasoning as
+     * StageDocumentService.loadStagedDocuments() -- this method is called
+     * directly from ContractRecordController (no self-invocation), so
+     * Spring's transactional proxy actually applies here, unlike that
+     * earlier self-invocation bug.
+     *
+     * propertyDTO/addressDTO are left null when no Property row exists for
+     * this record yet (legacy records, or anything created before Property
+     * was wired up) -- the UI's record-details panel must treat that as
+     * "no address on file", not an error.
+     */
+    @Transactional(readOnly = true)
+    public ContractRecordDTO getRecordDetail(final Long id) {
+        final ContractRecord record = contractRecordRepository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("No contract_record row for id=" + id));
+
+        final ContractRecordDTO dto = new ContractRecordDTO();
+        dto.setId(record.getId());
+        dto.setRecordCode(record.getRecordCode());
+        dto.setCreatedBy(record.getCreatedBy());
+        dto.setCreatedAt(record.getCreatedAt());
+        dto.setUpdatedBy(record.getUpdatedBy());
+        dto.setUpdatedAt(record.getUpdatedAt());
+
+        if (record.getWorkspace() != null) {
+            final WorkspaceDTO workspaceDTO = new WorkspaceDTO();
+            workspaceDTO.setCode(record.getWorkspace().getCode());
+            workspaceDTO.setName(record.getWorkspace().getName());
+            dto.setWorkspaceDTO(workspaceDTO);
+        }
+        if (record.getContractType() != null) {
+            final LkpContractTypeDTO contractTypeDTO = new LkpContractTypeDTO();
+            contractTypeDTO.setCode(record.getContractType().getCode());
+            contractTypeDTO.setLabel(record.getContractType().getLabel());
+            dto.setContractTypeDTO(contractTypeDTO);
+        }
+        if (record.getStatus() != null) {
+            final LkpContractRecordStatusDTO statusDTO = new LkpContractRecordStatusDTO();
+            statusDTO.setCode(record.getStatus().getCode());
+            statusDTO.setLabel(record.getStatus().getLabel());
+            dto.setStatusDTO(statusDTO);
+        }
+        if (record.getCounterparty() != null) {
+            final CounterpartyDTO counterpartyDTO = new CounterpartyDTO();
+            counterpartyDTO.setId(record.getCounterparty().getId());
+            counterpartyDTO.setName(record.getCounterparty().getName());
+            dto.setCounterpartyDTO(counterpartyDTO);
+        }
+
+        propertyRepository.findByContractRecord_Id(id).ifPresent(property -> {
+            final PropertyDTO propertyDTO = new PropertyDTO();
+            propertyDTO.setId(property.getId());
+            propertyDTO.setPropertyName(property.getPropertyName());
+            propertyDTO.setPropertyType(property.getPropertyType());
+            if (property.getAddress() != null) {
+                final Address address = property.getAddress();
+                final AddressDTO addressDTO = new AddressDTO();
+                addressDTO.setAddressLine1(address.getAddressLine1());
+                addressDTO.setAddressLine2(address.getAddressLine2());
+                addressDTO.setCity(address.getCity());
+                addressDTO.setState(address.getState());
+                addressDTO.setZip(address.getZip());
+                addressDTO.setCountry(address.getCountry());
+                propertyDTO.setAddressDTO(addressDTO);
+            }
+            dto.setPropertyDTO(propertyDTO);
+        });
+
+        return dto;
     }
 
     /**
