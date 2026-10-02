@@ -17,6 +17,7 @@ import com.dodaso.ecosystem.elcm.dto.StagedDocumentDTO;
 import com.dodaso.ecosystem.elcm.entity.lookup.LkpContractType;
 import com.dodaso.ecosystem.elcm.entity.lookup.LkpRoutingIntent;
 import com.dodaso.ecosystem.elcm.entity.lookup.LkpStagedDocumentStatus;
+import com.dodaso.ecosystem.elcm.entity.pipeline.ContractRecord;
 import com.dodaso.ecosystem.elcm.entity.pipeline.StagedDocument;
 import com.dodaso.ecosystem.elcm.entity.pipeline.Workspace;
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpContractTypeRepository;
@@ -107,6 +108,7 @@ public class StageDocumentService {
     private final LkpContractTypeRepository lkpContractTypeRepository;
     private final LkpRoutingIntentRepository lkpRoutingIntentRepository;
     private final LkpStagedDocumentStatusRepository lkpStagedDocumentStatusRepository;
+    private final RecordProvisioningService recordProvisioningService;
 
     /**
      * Not transactional on purpose -- see class Javadoc. Delegates the DB
@@ -221,19 +223,35 @@ public class StageDocumentService {
      * The actual "Add to Pipeline" write path -- see class Javadoc for the
      * full root-cause/design explanation. One transaction for the whole
      * batch: either every file in this "Add to Pipeline" submission gets a
-     * staged_document row, or (on any lookup failure) none do, rather than
-     * leaving a partially-recorded submission behind.
+     * staged_document row (linked to the same resolved/created record), or
+     * (on any lookup/creation failure) none do, rather than leaving a
+     * partially-recorded submission behind.
      *
      * REVISED 2026-09-29: contractType now honors the submitted
      * contractTypeDTO's code when present (New Record's Contract Type
      * dropdown) rather than always using DEFAULT_CONTRACT_TYPE_CODE --
      * Existing Record and Not Sure submissions never set contractTypeDTO
      * (see UploadFilesService.submitToPipeline() on the elcm-ui side), so
-     * they still fall back to the default. newRecordName/
-     * newRecordCounterparty/newRecordPropertyAddress/existingRecordQuery
-     * are copied straight through from the DTO in toEntity() -- see
-     * StagedDocument's Javadoc for why these are plain columns rather than
-     * a real ContractRecord/Property/Address row at this point.
+     * they still fall back to the default.
+     *
+     * REVISED 2026-10-01: resolves (or creates) the real target
+     * ContractRecord synchronously, per explicit decision in chat -- this
+     * is no longer deferred to a later "Preparer promotes this" step.
+     * routingIntent decides how:
+     *   - NEW_RECORD: RecordProvisioningService.createNewRecord() creates a
+     *     brand-new Counterparty(-or-reuse)/Address/Property/ContractRecord
+     *     from the dialog's New Record sub-panel fields.
+     *   - EXISTING_RECORD: RecordProvisioningService.findExistingRecord()
+     *     looks up the record the user actually picked from the Existing
+     *     Record autocomplete (first.getExistingRecordId()) -- NOT the raw
+     *     search text, which is kept only as an audit trail (see
+     *     StagedDocument.existingRecordQuery's Javadoc).
+     *   - NOT_SURE (or anything else): targetRecord stays null, same as
+     *     before -- a genuine "leave it in staging" submission has no
+     *     record to resolve by design.
+     * Resolved/created once per submission (same "same record for every
+     * file in this batch" reasoning as workspace/contractType above), not
+     * once per file.
      */
     @Transactional
     public StagedDocumentDTOContainer createStagedDocuments(final StagedDocumentDTOContainer requestContainer) {
@@ -265,10 +283,12 @@ public class StageDocumentService {
             .orElseThrow(() -> new IllegalStateException(
                 "Missing default lkp_staged_document_status row for code: " + DEFAULT_STAGED_DOCUMENT_STATUS_CODE));
 
+        final ContractRecord targetRecord = resolveTargetRecord(first, routingIntentCode, workspace, contractType);
+
         final LocalDateTime uploadedAt = LocalDateTime.now();
 
         final List<StagedDocument> toSave = requested.stream()
-            .map(dto -> toEntity(dto, workspace, contractType, routingIntent, status, uploadedAt))
+            .map(dto -> toEntity(dto, workspace, contractType, routingIntent, status, targetRecord, uploadedAt))
             .toList();
 
         final List<StagedDocument> saved = stagedDocumentRepository.saveAll(toSave);
@@ -277,8 +297,42 @@ public class StageDocumentService {
         return response;
     }
 
+    /**
+     * See createStagedDocuments()'s own Javadoc for the three-way branch
+     * this implements. Pulled out as its own method purely for readability
+     * -- it's still called exactly once per submission, inside the same
+     * @Transactional as the rest of createStagedDocuments().
+     */
+    private ContractRecord resolveTargetRecord(final StagedDocumentDTO first, final String routingIntentCode,
+            final Workspace workspace, final LkpContractType contractType) {
+        if (ROUTING_INTENT_NEW_RECORD.equals(routingIntentCode)) {
+            return recordProvisioningService.createNewRecord(first, workspace, contractType);
+        }
+        if (ROUTING_INTENT_EXISTING_RECORD.equals(routingIntentCode)) {
+            if (first.getExistingRecordId() == null) {
+                throw new IllegalArgumentException(
+                    "Existing Record was chosen but no record was actually selected (existingRecordId is null).");
+            }
+            return recordProvisioningService.findExistingRecord(first.getExistingRecordId());
+        }
+        // NOT_SURE, or any future routing intent this method doesn't know
+        // about yet -- leave it unresolved rather than guessing.
+        return null;
+    }
+
+    // elcm-service has no compile-time dependency on elcm-ui's
+    // DestinationChoiceEnum (different module) -- routingIntentDTO.code is
+    // just that enum's name() as a plain String on the wire (see
+    // UploadFilesService.submitToPipeline() on the elcm-ui side). These
+    // constants exist purely so resolveTargetRecord() above isn't comparing
+    // against bare string literals; keep them in sync with
+    // DestinationChoiceEnum's actual constant names if those ever change.
+    private static final String ROUTING_INTENT_NEW_RECORD = "NEW_RECORD";
+    private static final String ROUTING_INTENT_EXISTING_RECORD = "EXISTING_RECORD";
+
     private StagedDocument toEntity(StagedDocumentDTO dto, Workspace workspace, LkpContractType contractType,
-        LkpRoutingIntent routingIntent, LkpStagedDocumentStatus status, LocalDateTime uploadedAt) {
+        LkpRoutingIntent routingIntent, LkpStagedDocumentStatus status, ContractRecord targetRecord,
+        LocalDateTime uploadedAt) {
         final StagedDocument doc = new StagedDocument();
         doc.setFileUploadId(dto.getFileUploadId());
         doc.setWorkspace(workspace);
@@ -288,19 +342,25 @@ public class StageDocumentService {
         doc.setAssigneeId(dto.getAssigneeId());
         doc.setComments(dto.getComments());
         doc.setUploadedBy(dto.getUploadedBy());
-        // ADDED 2026-09-29 -- see StagedDocument's Javadoc. Copied straight
-        // through regardless of which destination was chosen; only the
-        // pair actually matching that destination is ever non-null on the
-        // incoming dto (enforced on the elcm-ui side, not re-validated
-        // here).
+        // See StagedDocument's Javadoc (REVISED 2026-10-01 note): these
+        // stay as a durable audit trail of exactly what the user typed,
+        // even though targetRecord (below) now also links the real record
+        // synchronously.
         doc.setNewRecordName(dto.getNewRecordName());
         doc.setNewRecordCounterparty(dto.getNewRecordCounterparty());
         doc.setNewRecordPropertyAddress(dto.getNewRecordPropertyAddress());
+        doc.setNewRecordAddressLine2(dto.getNewRecordAddressLine2());
+        doc.setNewRecordCity(dto.getNewRecordCity());
+        doc.setNewRecordState(dto.getNewRecordState());
+        doc.setNewRecordZip(dto.getNewRecordZip());
         doc.setExistingRecordQuery(dto.getExistingRecordQuery());
+        // ADDED 2026-10-01 -- previously always left null ("the dialog has
+        // no way to pick a target contract_record yet"); now set to
+        // whatever resolveTargetRecord() resolved/created for this
+        // submission (null for a NOT_SURE submission, same as before).
+        doc.setTargetRecord(targetRecord);
         // uploaded_at is a server fact, not client input -- see class
-        // Javadoc. target_record_id is left null: the dialog has no way to
-        // pick a target contract_record yet (only applies once a real
-        // record-matching flow exists for "Existing Record").
+        // Javadoc.
         doc.setUploadedAt(uploadedAt);
         return doc;
     }
