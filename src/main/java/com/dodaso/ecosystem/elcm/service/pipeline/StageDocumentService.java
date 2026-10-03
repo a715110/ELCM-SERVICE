@@ -165,10 +165,35 @@ public class StageDocumentService {
         // means "not yet linked to a record" (e.g. a NOT_SURE submission),
         // not an error -- findAllWithWorkspaceAndTargetRecord()'s JOIN FETCH
         // already makes this a safe, non-lazy read either way.
-        Long targetRecordId = doc.getTargetRecord() != null ? doc.getTargetRecord().getId() : null;
+        final ContractRecord targetRecord = doc.getTargetRecord();
+        Long targetRecordId = targetRecord != null ? targetRecord.getId() : null;
+
+        // ADDED 2026-10-03 -- Record-column hover preview (see
+        // StagedDocumentRow's Javadoc). Same "safe to read, no extra
+        // query" reasoning as targetRecordId above -- the repository's JOIN
+        // FETCH now covers targetRecord.counterparty/contractType/status/
+        // workspace too. null targetRecord (nothing linked yet) or a null
+        // counterparty (linked record just has none on file) both fall
+        // through to null fields here; the UI decides what to show for
+        // that, same as elsewhere (e.g. documentviewer.xhtml's dv-field
+        // blocks).
+        String recordCounterparty = targetRecord != null && targetRecord.getCounterparty() != null
+            ? targetRecord.getCounterparty().getName() : null;
+        String recordContractType = targetRecord != null && targetRecord.getContractType() != null
+            ? targetRecord.getContractType().getLabel() : null;
+        String recordStatus = targetRecord != null && targetRecord.getStatus() != null
+            ? targetRecord.getStatus().getLabel() : null;
+        String recordWorkspace = targetRecord != null && targetRecord.getWorkspace() != null
+            ? targetRecord.getWorkspace().getName() : null;
+
+        // ADDED 2026-10-03 -- File Name hover preview. Plain columns already
+        // on this entity, just not read into a draft before now.
+        String uploadedBy = doc.getUploadedBy();
+        String comments = doc.getComments();
 
         return new StagedDocumentDraft(doc.getId(), doc.getFileUploadId(), workspace, record, assignee, uploadedAt,
-            targetRecordId);
+            targetRecordId, recordCounterparty, recordContractType, recordStatus, recordWorkspace, uploadedBy,
+            comments);
     }
 
     /**
@@ -212,7 +237,9 @@ public class StageDocumentService {
         String type = deriveFileType(fileName);
 
         return new StagedDocumentRow(draft.id(), fileName, type, draft.workspace(), draft.record(), draft.assignee(),
-            draft.uploadedAt(), draft.fileUploadId(), draft.targetRecordId());
+            draft.uploadedAt(), draft.fileUploadId(), draft.targetRecordId(), draft.recordCounterparty(),
+            draft.recordContractType(), draft.recordStatus(), draft.recordWorkspace(), draft.uploadedBy(),
+            draft.comments());
     }
 
     private String deriveFileType(String fileName) {
@@ -394,9 +421,16 @@ public class StageDocumentService {
      * while the Hibernate session from loadStagedDocuments() is still open
      * -- see class Javadoc phase 1/2 split. Package-private record local to
      * this service; never returned outside it.
+     *
+     * REVISED 2026-10-03 -- recordCounterparty/recordContractType/
+     * recordStatus/recordWorkspace/uploadedBy/comments added for the
+     * dashboard's hover-preview tooltips -- see toDraft()'s and
+     * StagedDocumentRow's own Javadoc.
      */
     private record StagedDocumentDraft(Long id, Long fileUploadId, String workspace, String record, String assignee,
-                                       String uploadedAt, Long targetRecordId) {
+                                       String uploadedAt, Long targetRecordId, String recordCounterparty,
+                                       String recordContractType, String recordStatus, String recordWorkspace,
+                                       String uploadedBy, String comments) {
     }
 
 }

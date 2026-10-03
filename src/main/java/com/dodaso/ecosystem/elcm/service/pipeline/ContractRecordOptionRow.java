@@ -19,10 +19,17 @@ import lombok.Getter;
  * for Jackson to deserialize the JSON this class serializes into -- same
  * two-unrelated-classes-same-name convention already used for
  * StagedDocumentRow, not a shared module type.
+ *
+ * ADDED 2026-10-02 -- counterpartyName, so a counterparty-matched result
+ * shows why it matched (a bare record code gives no clue when the typed
+ * text was "Acme", not "RETAIL-"). Null when the record has no counterparty
+ * on file (ContractRecord.counterparty is nullable). See
+ * RecordProvisioningService.search() for how this is populated.
  */
 @Getter
 @AllArgsConstructor
 public class ContractRecordOptionRow implements Serializable {
     private final Long id;
     private final String recordCode;
+    private final String counterpartyName;
 }

@@ -3,6 +3,7 @@ package com.dodaso.ecosystem.elcm.service.pipeline;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -153,20 +154,36 @@ public class RecordProvisioningService {
 
     /**
      * Backs ContractRecordController.search() / the dialog's autocomplete.
-     * Matches on record_code only for now -- counterparty/address aren't
-     * searchable yet since ContractRecord doesn't eagerly fetch
-     * counterparty or Property/Address here (and Property isn't even
-     * guaranteed to exist for every record). Extend this once a real
-     * "search by counterparty or address too" requirement shows up.
+     *
+     * REVISED 2026-10-02 -- extended to also match on counterparty name
+     * (substring-anywhere, case-insensitive), per explicit decision in chat:
+     * counterparty only for now, more fields (e.g. address) later based on
+     * feedback. See ContractRecordRepository.
+     * searchTop20ByRecordCodeOrCounterpartyName() for the actual query --
+     * record_code and counterparty.name are matched in a single query rather
+     * than two separate lookups merged here, so a record matching on both
+     * doesn't show up twice.
+     *
+     * ADDED @Transactional(readOnly = true) 2026-10-02 -- unlike the old
+     * version (id/recordCode only, no lazy access needed), mapping each row
+     * now calls r.getCounterparty(), a LAZY @ManyToOne (see ContractRecord's
+     * Javadoc). Without an open session spanning the whole method, that
+     * access happens after the repository call's own session has closed and
+     * throws LazyInitializationException -- same reasoning as
+     * getRecordDetail() below.
      */
+    @Transactional(readOnly = true)
     public List<ContractRecordOptionRow> search(final String query) {
         if (query == null || query.isBlank()) {
             return List.of();
         }
         return contractRecordRepository
-            .findTop20ByRecordCodeContainingIgnoreCaseOrderByRecordCode(query.trim())
+            .searchTop20ByRecordCodeOrCounterpartyName(query.trim(), PageRequest.of(0, 20))
             .stream()
-            .map(r -> new ContractRecordOptionRow(r.getId(), r.getRecordCode()))
+            .map(r -> new ContractRecordOptionRow(
+                r.getId(),
+                r.getRecordCode(),
+                r.getCounterparty() != null ? r.getCounterparty().getName() : null))
             .collect(Collectors.toList());
     }
 

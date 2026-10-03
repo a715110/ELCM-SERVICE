@@ -31,6 +31,27 @@ import lombok.Getter;
  * submission, or any row created before the synchronous record-creation
  * feature existed) -- the UI's eye icon/record panel must treat null as
  * "not yet linked to a record", not as an error.
+ *
+ * ADDED 2026-10-03 -- recordCounterparty/recordContractType/recordStatus/
+ * recordWorkspace, plus uploadedBy/comments, back the dashboard's new
+ * hover-preview tooltips on the File Name and Record columns. Deliberately
+ * flattened onto THIS row (rather than a nested ContractRecordDTO fetched
+ * on hover) so hovering is instant and needs no extra request -- the four
+ * record fields come from the SAME already-open Hibernate session as the
+ * rest of this row's data (see StagedDocumentRepository.
+ * findAllWithWorkspaceAndTargetRecord()'s now-wider JOIN FETCH), just like
+ * workspace/record/assignee above. All four are null whenever
+ * targetRecordId is null (nothing to preview -- see that field's own
+ * note), and recordCounterparty specifically can be null even when a
+ * record IS linked (ContractRecord.counterparty is itself nullable -- see
+ * that entity's Javadoc).
+ *
+ * uploadedBy/comments were already columns on staged_document but were
+ * never read into this row before now -- toDraft() previously only pulled
+ * what the table's own columns needed. The File Name tooltip's exact field
+ * set (Uploaded By / Uploaded At / Comments / File Type) is a reasonable
+ * first cut, not something the user specified -- flag if a different set
+ * is wanted.
  */
 @Getter
 @AllArgsConstructor
@@ -44,4 +65,10 @@ public class StagedDocumentRow implements Serializable {
     private final String uploadedAt;
     private final Long fileUploadId;
     private final Long targetRecordId;
+    private final String recordCounterparty;
+    private final String recordContractType;
+    private final String recordStatus;
+    private final String recordWorkspace;
+    private final String uploadedBy;
+    private final String comments;
 }
