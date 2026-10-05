@@ -6,11 +6,13 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dodaso.ecosystem.auth.dto.UserDirectoryDTO;
 import com.dodaso.ecosystem.common.dto.FileUploadDTO;
 import com.dodaso.ecosystem.elcm.container.StagedDocumentDTOContainer;
 import com.dodaso.ecosystem.elcm.dto.StagedDocumentDTO;
@@ -88,8 +90,10 @@ import lombok.RequiredArgsConstructor;
  *     place a file name is available post-refactor.
  *   - "record" -- shows the linked contract_record's record_code, or
  *     "Unassigned" when target_record_id is null.
- *   - "assignee" -- shows the raw assignee_id (an IAMS login_id/email) or
- *     "Unassigned".
+ *   - "assignee" -- the assignee's display name, resolved in mapToRow() from
+ *     assignee_id (an IAMS login_id; legacy rows may hold a display name --
+ *     see AssigneeDirectoryLookupService), the raw stored value if it can't
+ *     be resolved, or "Unassigned".
  */
 @Service
 @RequiredArgsConstructor
@@ -109,6 +113,7 @@ public class StageDocumentService {
     private final LkpRoutingIntentRepository lkpRoutingIntentRepository;
     private final LkpStagedDocumentStatusRepository lkpStagedDocumentStatusRepository;
     private final RecordProvisioningService recordProvisioningService;
+    private final AssigneeDirectoryLookupService assigneeDirectoryLookupService;
 
     /**
      * Not transactional on purpose -- see class Javadoc. Delegates the DB
@@ -236,10 +241,59 @@ public class StageDocumentService {
         String fileName = fileUpload.getFileName();
         String type = deriveFileType(fileName);
 
-        return new StagedDocumentRow(draft.id(), fileName, type, draft.workspace(), draft.record(), draft.assignee(),
-            draft.uploadedAt(), draft.fileUploadId(), draft.targetRecordId(), draft.recordCounterparty(),
-            draft.recordContractType(), draft.recordStatus(), draft.recordWorkspace(), draft.uploadedBy(),
-            draft.comments());
+        // ADDED 2026-10-04 -- Assignee-column hover preview. Resolved here
+        // (not in toDraft()), outside the DB transaction, same reasoning
+        // as the fileUpload lookup above -- see StagedDocumentDraft's
+        // Javadoc. "Unassigned" is never a real directory entry (see
+        // toDraft()'s sentinel), so skip the lookup entirely for it.
+        //
+        // REVISED 2026-10-04 (assigneeId -> loginId): draft.assignee() is the
+        // raw assignee_id -- now a login ID (or, for pre-change rows, a
+        // display name; see AssigneeDirectoryLookupService's class Javadoc
+        // for the resolution order). The row's "assignee" column shows the
+        // RESOLVED display name, so the table reads the same as before even
+        // though the stored value changed; an unresolved value (inactive
+        // user, IAMS outage) falls back to showing the raw stored value.
+        // assigneeLoginId is non-null exactly when the lookup resolved --
+        // the UI keys its hover-preview variant off that, not off roles
+        // (a resolved person can legitimately have no roles on file).
+        String assigneeDisplayName = draft.assignee();
+        String assigneeLoginId = null;
+        String assigneeTeamName = null;
+        String assigneeRoles = null;
+        String assigneeWorkspaceCodes = null;
+        if (!"Unassigned".equals(draft.assignee())) {
+            Optional<UserDirectoryDTO> directoryEntry =
+                assigneeDirectoryLookupService.findByAssigneeId(draft.assignee());
+            if (directoryEntry.isPresent()) {
+                UserDirectoryDTO entry = directoryEntry.get();
+                if (entry.getDisplayName() != null && !entry.getDisplayName().isBlank()) {
+                    assigneeDisplayName = entry.getDisplayName();
+                }
+                assigneeLoginId = entry.getLoginId();
+                assigneeTeamName = entry.getTeamName();
+                assigneeRoles = joinOrNull(entry.getRoleNames());
+                assigneeWorkspaceCodes = joinOrNull(entry.getWorkspaceCodes());
+            }
+        }
+
+        return new StagedDocumentRow(draft.id(), fileName, type, draft.workspace(), draft.record(),
+            assigneeDisplayName, draft.uploadedAt(), draft.fileUploadId(), draft.targetRecordId(),
+            draft.recordCounterparty(), draft.recordContractType(), draft.recordStatus(), draft.recordWorkspace(),
+            draft.uploadedBy(), draft.comments(), assigneeTeamName, assigneeRoles, assigneeWorkspaceCodes,
+            assigneeLoginId);
+    }
+
+    /** Null (not empty string) for an empty/null list -- lets the UI's
+     * "did this resolve" rendered check (used for the Assignee tooltip's
+     * mutually-exclusive variants) key off a single null-check consistent
+     * with assigneeTeamName/assigneeRoles, rather than treating "resolved
+     * but has zero roles" and "never resolved" differently. */
+    private static String joinOrNull(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return null;
+        }
+        return String.join(", ", values);
     }
 
     private String deriveFileType(String fileName) {
@@ -426,6 +480,16 @@ public class StageDocumentService {
      * recordStatus/recordWorkspace/uploadedBy/comments added for the
      * dashboard's hover-preview tooltips -- see toDraft()'s and
      * StagedDocumentRow's own Javadoc.
+     *
+     * Deliberately does NOT carry assigneeTeamName/assigneeRoles/
+     * assigneeWorkspaceCodes (the Assignee-column hover preview, added
+     * 2026-10-04) even though those end up on StagedDocumentRow -- unlike
+     * the record* fields, resolving them requires an outbound call to
+     * IAMS (AssigneeDirectoryLookupService), and per this class's own
+     * documented phase 1/2 split (see class Javadoc), an outbound call
+     * must never happen inside loadStagedDocuments()'s transactional
+     * phase. mapToRow() resolves them instead, same phase as the
+     * fileUpload lookup.
      */
     private record StagedDocumentDraft(Long id, Long fileUploadId, String workspace, String record, String assignee,
                                        String uploadedAt, Long targetRecordId, String recordCounterparty,

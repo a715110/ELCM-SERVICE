@@ -52,6 +52,34 @@ import lombok.Getter;
  * set (Uploaded By / Uploaded At / Comments / File Type) is a reasonable
  * first cut, not something the user specified -- flag if a different set
  * is wanted.
+ *
+ * ADDED 2026-10-04 -- assigneeTeamName/assigneeRoles/assigneeWorkspaceCodes
+ * back the dashboard's new Assignee-column hover preview, extending the
+ * same File Name/Record tooltip feature per explicit request. Unlike the
+ * record* fields above, these do NOT come from the same already-open
+ * Hibernate session/JOIN FETCH -- "assignee" is just a free-text string on
+ * staged_document (see class Javadoc: actually a display name, not a real
+ * FK), so resolving it to team/role/workspace-specialty details requires a
+ * separate outbound call to IAMS. See
+ * AssigneeDirectoryLookupService/StageDocumentService.mapToRow() for that
+ * lookup (cached, matched by display name, fails open to nulls here on any
+ * miss/error). roles/workspaceCodes are comma-joined strings, not nested
+ * lists -- this row is a flat table-display shape, same reasoning as the
+ * record* fields being flat scalars rather than a nested DTO. All three
+ * are null whenever the assignee didn't resolve to a directory entry
+ * (unassigned, or a name with no directory match) -- the UI falls back to
+ * an explanatory tooltip for that case, same pattern as the Record
+ * column's "no linked record" variant.
+ *
+ * REVISED 2026-10-04 (assigneeId -> loginId) -- staged_document.assignee_id
+ * now stores the assignee's IAMS login ID, so "assignee" above is no longer
+ * the raw column value: it is the RESOLVED display name (falling back to the
+ * raw stored value when unresolved, or "Unassigned"). assigneeLoginId, added
+ * as the LAST field so the constructor order above stays untouched, is the
+ * resolved person's login ID -- null exactly when the lookup did not
+ * resolve, which makes it the reliable "did this resolve" flag for the UI
+ * (assigneeRoles can't be: a resolved person may have no roles). Shown in the
+ * tooltip so identically-named people can be told apart.
  */
 @Getter
 @AllArgsConstructor
@@ -71,4 +99,8 @@ public class StagedDocumentRow implements Serializable {
     private final String recordWorkspace;
     private final String uploadedBy;
     private final String comments;
+    private final String assigneeTeamName;
+    private final String assigneeRoles;
+    private final String assigneeWorkspaceCodes;
+    private final String assigneeLoginId;
 }

@@ -433,7 +433,7 @@
       <artifactId>common-data-model</artifactId>
       <groupId>com.dodaso.ecosystem.common.data.model</groupId>
       <version>${revision}</version>
-    </dependency>  
+    </dependency>
     <dependency>
       <artifactId>ecws-data-model</artifactId>
       <groupId>com.dodaso.ecosystem.ecws.data.model</groupId>
@@ -447,6 +447,16 @@
     <dependency>
       <artifactId>elcm-data-model</artifactId>
       <groupId>com.dodaso.ecosystem.elcm.data.model</groupId>
+      <version>${revision}</version>
+    </dependency>
+    <dependency>
+      <!-- Needed for the Assignee-column hover preview (dashboard.xhtml):
+           elcm-service calls IAMS's getUserDirectories() endpoint and
+           needs its UserDirectoryDTO/UserDirectoryDTOContainer/
+           UserControllerAPIEnum types - same artifact elcm-ui already
+           depends on for the "Assign To" dropdown. -->
+      <artifactId>iams-data-model</artifactId>
+      <groupId>com.dodaso.ecosystem.iams.data.model</groupId>
       <version>${revision}</version>
     </dependency>
   </dependencies>
@@ -484,4 +494,4 @@
       <url>s3://dodaso-maven-repo/release</url>
     </repository>
   </distributionManagement>-->
-</project>
+</project>
