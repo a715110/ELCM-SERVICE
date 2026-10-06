@@ -1,5 +1,6 @@
 package com.dodaso.ecosystem.elcm.service.pipeline;
 
+import com.dodaso.ecosystem.baseline.common.helper.TimezoneContextHelper;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -98,7 +99,7 @@ import lombok.RequiredArgsConstructor;
 @Service
 @RequiredArgsConstructor
 public class StageDocumentService {
-    private static final DateTimeFormatter UPLOADED_AT_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final DateTimeFormatter UPLOADED_AT_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm z");
 
     /** See class Javadoc -- no contract-type input on the dialog yet. */
     private static final String DEFAULT_CONTRACT_TYPE_CODE = "PROPERTY_LEASE";
@@ -165,7 +166,8 @@ public class StageDocumentService {
         String record = deriveRecordLabel(doc);
         String assignee = doc.getAssigneeId() != null && !doc.getAssigneeId().isBlank()
             ? doc.getAssigneeId() : "Unassigned";
-        String uploadedAt = doc.getUploadedAt() != null ? doc.getUploadedAt().format(UPLOADED_AT_FORMAT) : "";
+        String uploadedAt = doc.getUploadedAt() != null
+            ? TimezoneContextHelper.formatUtcInUserTimezone(doc.getUploadedAt(), "yyyy-MM-dd HH:mm z") : "";
         // ADDED 2026-10-01 -- see StagedDocumentRow's Javadoc: null here just
         // means "not yet linked to a record" (e.g. a NOT_SURE submission),
         // not an error -- findAllWithWorkspaceAndTargetRecord()'s JOIN FETCH
@@ -372,7 +374,7 @@ public class StageDocumentService {
 
         final ContractRecord targetRecord = resolveTargetRecord(first, routingIntentCode, workspace, contractType);
 
-        final LocalDateTime uploadedAt = LocalDateTime.now();
+        final LocalDateTime uploadedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
 
         final List<StagedDocument> toSave = requested.stream()
             .map(dto -> toEntity(dto, workspace, contractType, routingIntent, status, targetRecord, uploadedAt))
