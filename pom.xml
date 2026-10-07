@@ -262,6 +262,10 @@
       <artifactId>spring-boot-starter-security</artifactId>
       <groupId>org.springframework.boot</groupId>
     </dependency>
+    <dependency>
+      <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+      <groupId>org.springframework.boot</groupId>
+    </dependency>
     <!-- STEP1: removed jasypt-spring-boot-starter. Database passwords now come from Key Vault (cloud) or an environment variable (local); ENC(...) values are gone. If a class imports org.jasypt or com.ulisesbocchio, restore it. -->
     <dependency>
       <artifactId>spring-data-jpa</artifactId>
@@ -433,7 +437,7 @@
       <artifactId>common-data-model</artifactId>
       <groupId>com.dodaso.ecosystem.common.data.model</groupId>
       <version>${revision}</version>
-    </dependency>
+    </dependency>  
     <dependency>
       <artifactId>ecws-data-model</artifactId>
       <groupId>com.dodaso.ecosystem.ecws.data.model</groupId>
@@ -494,4 +498,4 @@
       <url>s3://dodaso-maven-repo/release</url>
     </repository>
   </distributionManagement>-->
-</project>
+</project>

@@ -16,10 +16,10 @@ import org.springframework.web.servlet.HandlerInterceptor;
 /**
  * Enforces {@link RequiresPermission} on controller methods.
  *
- * <p>Caller identity is the Security context user or the {@code X-User-Context} header sent by
- * elcm-ui. Note: elcm-service does not yet validate the OAuth2 token, so that header is a
- * trusted-network signal, not proof of identity. Real enforcement needs token validation at the
- * service (resource server); this check is the in-code half that stays valid afterwards.
+ * <p>Caller identity: the validated SSO access token (see {@link AccessTokenFilter}) when one was
+ * sent, which also supplies the roles. Otherwise the {@code X-User-Context} header, which is a
+ * trusted-network signal and not proof of identity; set DODASO_AUTHZ_TOKEN_REQUIRED=true to end
+ * that fallback.
  *
  * <p>Rollout switch {@code dodaso.authz.enforce} (env {@code DODASO_AUTHZ_ENFORCE}), default
  * false: a denied call is only logged as a warning. Set to true to return 403.
@@ -50,9 +50,18 @@ public class PermissionInterceptor implements HandlerInterceptor {
       return true;
     }
 
-    String caller = callerResolver.getCurrentAuditor().orElse(SYSTEM_USER);
-    List<String> roles =
-        SYSTEM_USER.equalsIgnoreCase(caller) ? List.of() : callerRoleService.rolesOf(caller);
+    // A validated SSO token (AccessTokenFilter) is the identity and carries the roles, so no
+    // IAMS lookup is needed. Without one, fall back to the X-User-Context header plus IAMS.
+    String caller;
+    List<String> roles;
+    Object verified = request.getAttribute(VerifiedCaller.ATTRIBUTE);
+    if (verified instanceof VerifiedCaller vc) {
+      caller = vc.loginId();
+      roles = vc.roles();
+    } else {
+      caller = callerResolver.getCurrentAuditor().orElse(SYSTEM_USER);
+      roles = SYSTEM_USER.equalsIgnoreCase(caller) ? List.of() : callerRoleService.rolesOf(caller);
+    }
     if (ElcmRolePermissions.isGranted(roles, required.value())) {
       return true;
     }
