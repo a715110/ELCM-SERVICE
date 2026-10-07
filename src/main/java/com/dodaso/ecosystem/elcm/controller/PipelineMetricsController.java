@@ -5,6 +5,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dodaso.ecosystem.elcm.container.cust.PipelineMetricsDTOContainer;
+import com.dodaso.ecosystem.elcm.security.ElcmPermission;
+import com.dodaso.ecosystem.elcm.security.RequiresPermission;
 import com.dodaso.ecosystem.elcm.service.pipeline.PipelineMetricsService;
 
 import lombok.RequiredArgsConstructor;
@@ -31,6 +33,7 @@ public class PipelineMetricsController {
     private final PipelineMetricsService pipelineMetricsService;
 
     @GetMapping
+    @RequiresPermission(ElcmPermission.PIPELINE_VIEW)
     public PipelineMetricsDTOContainer getMetrics() {
         return pipelineMetricsService.getMetrics();
     }

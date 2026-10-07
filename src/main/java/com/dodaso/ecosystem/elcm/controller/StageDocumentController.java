@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dodaso.ecosystem.elcm.container.StagedDocumentDTOContainer;
+import com.dodaso.ecosystem.elcm.security.ElcmPermission;
+import com.dodaso.ecosystem.elcm.security.RequiresPermission;
 import com.dodaso.ecosystem.elcm.service.pipeline.StageDocumentService;
 import com.dodaso.ecosystem.elcm.service.pipeline.StagedDocumentRow;
 
@@ -27,6 +29,7 @@ public class StageDocumentController {
     private final StageDocumentService stageDocumentService;
 
     @GetMapping
+    @RequiresPermission(ElcmPermission.PIPELINE_VIEW)
     public List<StagedDocumentRow> getStagedDocuments(
             @RequestParam(required = false) String workspace) {
         // workspace filtering isn't implemented server-side yet -- see
@@ -44,6 +47,7 @@ public class StageDocumentController {
      * the full root-cause explanation and the lookup-resolution rules.
      */
     @PostMapping
+    @RequiresPermission(ElcmPermission.PIPELINE_SUBMIT)
     public StagedDocumentDTOContainer createStagedDocuments(
             @RequestBody final StagedDocumentDTOContainer requestContainer) {
         return stageDocumentService.createStagedDocuments(requestContainer);
