@@ -2,6 +2,7 @@ package com.dodaso.ecosystem.elcm.service.pipeline;
 
 import com.dodaso.ecosystem.baseline.common.helper.TimezoneContextHelper;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -10,8 +11,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dodaso.ecosystem.auth.dto.UserDirectoryDTO;
 import com.dodaso.ecosystem.common.dto.FileUploadDTO;
@@ -26,6 +29,7 @@ import com.dodaso.ecosystem.elcm.entity.pipeline.Workspace;
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpContractTypeRepository;
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpRoutingIntentRepository;
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpStagedDocumentStatusRepository;
+import com.dodaso.ecosystem.elcm.repository.pipeline.PackageDocumentRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.StagedDocumentRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.WorkspaceRepository;
 
@@ -108,6 +112,7 @@ public class StageDocumentService {
     private static final String DEFAULT_STAGED_DOCUMENT_STATUS_CODE = "UPLOADING";
 
     private final StagedDocumentRepository stagedDocumentRepository;
+    private final PackageDocumentRepository packageDocumentRepository;
     private final FileUploadLookupService fileUploadLookupService;
     private final WorkspaceRepository workspaceRepository;
     private final LkpContractTypeRepository lkpContractTypeRepository;
@@ -374,7 +379,7 @@ public class StageDocumentService {
 
         final ContractRecord targetRecord = resolveTargetRecord(first, routingIntentCode, workspace, contractType);
 
-        final LocalDateTime uploadedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
+        final LocalDateTime uploadedAt = LocalDateTime.now(ZoneOffset.UTC);
 
         final List<StagedDocument> toSave = requested.stream()
             .map(dto -> toEntity(dto, workspace, contractType, routingIntent, status, targetRecord, uploadedAt))
@@ -470,6 +475,78 @@ public class StageDocumentService {
         dto.setUploadedBy(doc.getUploadedBy());
         dto.setUploadedAt(doc.getUploadedAt());
         return dto;
+    }
+
+    /** Longest delete reason kept; matches staged_document.delete_reason VARCHAR(500). */
+    public static final int MAX_DELETE_REASON_LENGTH = 500;
+
+    /** Status code of a staged document whose package has been submitted for extraction. */
+    private static final String STATUS_SUBMITTED = "SUBMITTED";
+
+    /**
+     * ADDED 2026-10-07 -- soft delete of one staged document. The row stays (deleted_at,
+     * deleted_by and delete_reason are set); StagedDocument's @SQLRestriction hides it from the
+     * list, the metrics and every other query. Nothing is removed from common-service: the
+     * file_upload record, blob, thumbnail and conversion stay until a purge job exists (none is
+     * designed yet).
+     *
+     * Rules, in the order checked:
+     *   1. 400 when the reason is longer than MAX_DELETE_REASON_LENGTH after trimming.
+     *   2. 404 when no active row has this id (never existed, or already deleted).
+     *   3. 403 unless the caller uploaded the document (canDelete()).
+     *   4. 409 when the document is in a package, or its status is SUBMITTED.
+     *
+     * Not blocked by status VALID: nothing moves a row out of UPLOADING yet (the validation step
+     * is not built), so requiring VALID would block every delete. Tighten the status check in
+     * isDeletableState() when the status flow exists.
+     */
+    @Transactional
+    public void deleteStaged(final Long id, final String reason, final String callerLoginId) {
+        final String trimmedReason = reason != null ? reason.trim() : null;
+        if (trimmedReason != null && trimmedReason.length() > MAX_DELETE_REASON_LENGTH) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "Reason is longer than " + MAX_DELETE_REASON_LENGTH + " characters");
+        }
+
+        final StagedDocument doc = stagedDocumentRepository.findById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Staged document not found"));
+
+        if (!canDelete(doc, callerLoginId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                "Only the person who uploaded a document can delete it");
+        }
+        if (!isDeletableState(doc)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Document is in a package or already submitted");
+        }
+
+        doc.setDeletedAt(LocalDateTime.now(ZoneOffset.UTC));
+        doc.setDeletedBy(callerLoginId);
+        doc.setDeleteReason(trimmedReason == null || trimmedReason.isEmpty() ? null : trimmedReason);
+        stagedDocumentRepository.save(doc);
+    }
+
+    /**
+     * The "own documents only" rule, kept in this one method so it can be refined later (an admin
+     * override, per-workspace rules). The caller counts as the uploader when their login id
+     * matches uploaded_by, or created_by, which the audit columns fill from the same identity
+     * the caller is resolved from, so the check holds even when uploaded_by holds a different
+     * form of the same person's id. Case-insensitive. The "system" identity never matches.
+     */
+    private boolean canDelete(final StagedDocument doc, final String callerLoginId) {
+        if (callerLoginId == null || callerLoginId.isBlank() || "system".equalsIgnoreCase(callerLoginId)) {
+            return false;
+        }
+        return callerLoginId.equalsIgnoreCase(doc.getUploadedBy())
+            || callerLoginId.equalsIgnoreCase(doc.getCreatedBy());
+    }
+
+    /** False once the document is in a package or its status is SUBMITTED. See deleteStaged(). */
+    private boolean isDeletableState(final StagedDocument doc) {
+        if (doc.getStatus() != null && STATUS_SUBMITTED.equals(doc.getStatus().getCode())) {
+            return false;
+        }
+        return !packageDocumentRepository.existsByStagedDocument_Id(doc.getId());
     }
 
     /**

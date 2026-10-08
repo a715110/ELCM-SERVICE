@@ -20,14 +20,18 @@ public final class ElcmRolePermissions {
   static {
     Set<ElcmPermission> all = EnumSet.allOf(ElcmPermission.class);
     Set<ElcmPermission> viewOnly = EnumSet.of(ElcmPermission.PIPELINE_VIEW);
-    Set<ElcmPermission> viewAndSubmit =
-        EnumSet.of(ElcmPermission.PIPELINE_VIEW, ElcmPermission.PIPELINE_SUBMIT);
+    // The submitting roles may delete. StageDocumentService limits it to documents they uploaded.
+    Set<ElcmPermission> viewSubmitAndDelete =
+        EnumSet.of(
+            ElcmPermission.PIPELINE_VIEW,
+            ElcmPermission.PIPELINE_SUBMIT,
+            ElcmPermission.PIPELINE_DELETE);
 
     put("Super Admin", all);
     put("System Admin", all);
-    put("Document Submitter", viewAndSubmit);
-    put("Business Submitter", viewAndSubmit);
-    put("Preparer", viewAndSubmit);
+    put("Document Submitter", viewSubmitAndDelete);
+    put("Business Submitter", viewSubmitAndDelete);
+    put("Preparer", viewSubmitAndDelete);
     put("Reviewer", viewOnly);
     put("Approver", viewOnly);
     put("Accountant", viewOnly);

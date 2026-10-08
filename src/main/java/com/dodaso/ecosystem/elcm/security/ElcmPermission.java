@@ -11,7 +11,10 @@ public enum ElcmPermission {
   PIPELINE_VIEW("pipeline:view"),
 
   /** Add documents to the pipeline (Upload Files, Add to Pipeline). */
-  PIPELINE_SUBMIT("pipeline:submit");
+  PIPELINE_SUBMIT("pipeline:submit"),
+
+  /** Delete (soft delete) a staged document. Ownership is checked separately, in the service. */
+  PIPELINE_DELETE("pipeline:delete");
 
   private final String code;
 
