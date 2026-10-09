@@ -1,5 +1,6 @@
 package com.dodaso.ecosystem.elcm.controller;
 
+import com.dodaso.ecosystem.elcm.security.CallerIdentityResolver;
 import com.dodaso.ecosystem.elcm.security.ElcmPermission;
 import com.dodaso.ecosystem.elcm.security.RequiresPermission;
 import com.dodaso.ecosystem.elcm.service.pipeline.AddPackageDocumentsRequest;
@@ -10,6 +11,7 @@ import com.dodaso.ecosystem.elcm.service.pipeline.CreateContractPackageRequest;
 import com.dodaso.ecosystem.elcm.service.pipeline.DocumentRoleOptionRow;
 import com.dodaso.ecosystem.elcm.service.pipeline.PackageDocumentRow;
 import com.dodaso.ecosystem.elcm.service.pipeline.ReassignPackageRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -37,6 +39,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ContractPackageController {
 
     private final ContractPackageService contractPackageService;
+    private final CallerIdentityResolver callerIdentityResolver;
 
     @GetMapping
     @RequiresPermission(ElcmPermission.PIPELINE_VIEW)
@@ -80,6 +83,22 @@ public class ContractPackageController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void reassign(@PathVariable final Long id, @RequestBody final ReassignPackageRequest request) {
         contractPackageService.reassign(id, request);
+    }
+
+    /** Submit for extraction: 204; 400 not ready, 404 unknown, 409 not a draft. */
+    @PostMapping("/{id}/submit")
+    @RequiresPermission(ElcmPermission.PIPELINE_SUBMIT)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void submit(@PathVariable final Long id, final HttpServletRequest httpRequest) {
+        contractPackageService.submit(id, callerIdentityResolver.loginIdOf(httpRequest));
+    }
+
+    /** Unsubmit while the submission is still pending: 204; 404 unknown, 409 not submitted or picked up. */
+    @PostMapping("/{id}/unsubmit")
+    @RequiresPermission(ElcmPermission.PIPELINE_SUBMIT)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void unsubmit(@PathVariable final Long id) {
+        contractPackageService.unsubmit(id);
     }
 
     /** Removes one document from a draft package; it returns to the Stage Documents list. */

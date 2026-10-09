@@ -2,16 +2,23 @@ package com.dodaso.ecosystem.elcm.service.pipeline;
 
 import com.dodaso.ecosystem.elcm.entity.lookup.LkpDocumentRole;
 import com.dodaso.ecosystem.elcm.entity.lookup.LkpPackageStatus;
+import com.dodaso.ecosystem.elcm.entity.lookup.LkpStagedDocumentStatus;
+import com.dodaso.ecosystem.elcm.entity.lookup.LkpSubmissionStatus;
 import com.dodaso.ecosystem.elcm.entity.pipeline.ContractPackage;
 import com.dodaso.ecosystem.elcm.entity.pipeline.ContractRecord;
 import com.dodaso.ecosystem.elcm.entity.pipeline.PackageDocument;
 import com.dodaso.ecosystem.elcm.entity.pipeline.StagedDocument;
+import com.dodaso.ecosystem.elcm.entity.pipeline.Submission;
 import com.dodaso.ecosystem.elcm.entity.pipeline.Workspace;
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpDocumentRoleRepository;
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpPackageStatusRepository;
+import com.dodaso.ecosystem.elcm.repository.lookup.LkpStagedDocumentStatusRepository;
+import com.dodaso.ecosystem.elcm.repository.lookup.LkpSubmissionStatusRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.ContractPackageRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.PackageDocumentRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.StagedDocumentRepository;
+import com.dodaso.ecosystem.elcm.repository.pipeline.SubmissionRepository;
+import java.time.LocalDateTime;
 import java.time.Year;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -51,13 +58,20 @@ public class ContractPackageDataService {
 
     static final String UNDEFINED_ROLE_CODE = "UNDEFINED";
     static final String ASSEMBLY_STATUS_CODE = "ASSEMBLY";
+    static final String VALIDATED_STATUS_CODE = "VALIDATED";
+    static final String SUBMISSION_PENDING_CODE = "PENDING";
     private static final String STAGED_SUBMITTED_CODE = "SUBMITTED";
+    /** The status every document starts in (StageDocumentService); Unsubmit puts documents back to it. */
+    private static final String STAGED_DEFAULT_CODE = "UPLOADING";
 
     private final ContractPackageRepository contractPackageRepository;
     private final PackageDocumentRepository packageDocumentRepository;
     private final StagedDocumentRepository stagedDocumentRepository;
     private final LkpPackageStatusRepository lkpPackageStatusRepository;
     private final LkpDocumentRoleRepository lkpDocumentRoleRepository;
+    private final SubmissionRepository submissionRepository;
+    private final LkpSubmissionStatusRepository lkpSubmissionStatusRepository;
+    private final LkpStagedDocumentStatusRepository lkpStagedDocumentStatusRepository;
 
     @Transactional(readOnly = true)
     public List<ContractPackageDraft> loadPackages() {
@@ -171,6 +185,87 @@ public class ContractPackageDataService {
         final ContractPackage pkg = loadDraftPackage(packageId);
         pkg.setAssigneeId(assignee);
         contractPackageRepository.save(pkg);
+    }
+
+    /**
+     * Submit for extraction (decided 2026-10-08). The package moves ASSEMBLY to VALIDATED, a
+     * submission row is created as PENDING, and every document becomes SUBMITTED. Ready means: at
+     * least one document, an assignee, and a role on every document (none left as UNDEFINED); the
+     * target record is not required. 404 unknown package, 409 not a draft, 400 not ready.
+     * Nothing else changes while the package is VALIDATED: reassign, add and remove all answer 409.
+     */
+    @Transactional
+    public void submit(final Long packageId, final String callerLoginId) {
+        final ContractPackage pkg = loadDraftPackage(packageId);
+        final List<PackageDocument> links = packageDocumentRepository.findDetailedByPackageId(packageId);
+        if (links.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The package has no documents");
+        }
+        if (blankToNull(pkg.getAssigneeId()) == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The package has no assignee");
+        }
+        for (final PackageDocument link : links) {
+            if (UNDEFINED_ROLE_CODE.equals(link.getDocumentRole().getCode())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Every document needs a role");
+            }
+        }
+        final LkpPackageStatus validated = lkpPackageStatusRepository.findByCode(VALIDATED_STATUS_CODE)
+            .orElseThrow(() -> seedMissing("lkp_package_status", VALIDATED_STATUS_CODE));
+        final LkpSubmissionStatus pending = lkpSubmissionStatusRepository.findByCode(SUBMISSION_PENDING_CODE)
+            .orElseThrow(() -> seedMissing("lkp_submission_status", SUBMISSION_PENDING_CODE));
+        final LkpStagedDocumentStatus submittedDoc = lkpStagedDocumentStatusRepository.findByCode(STAGED_SUBMITTED_CODE)
+            .orElseThrow(() -> seedMissing("lkp_staged_document_status", STAGED_SUBMITTED_CODE));
+
+        pkg.setStatus(validated);
+        contractPackageRepository.save(pkg);
+
+        final Submission submission = new Submission();
+        submission.setContractPackage(pkg);
+        submission.setStatus(pending);
+        submission.setSubmittedBy(callerLoginId != null && !callerLoginId.isBlank() ? callerLoginId : "system");
+        submission.setSubmittedAt(LocalDateTime.now(ZoneOffset.UTC));
+        submissionRepository.save(submission);
+
+        for (final PackageDocument link : links) {
+            link.getStagedDocument().setStatus(submittedDoc);
+            stagedDocumentRepository.save(link.getStagedDocument());
+        }
+    }
+
+    /**
+     * Unsubmit, allowed only while nobody has picked the submission up (every submission of the
+     * package is still PENDING). The submission rows are deleted, the documents go back to their
+     * starting status, and the package returns to ASSEMBLY. 404 unknown package, 409 not
+     * submitted or already picked up.
+     */
+    @Transactional
+    public void unsubmit(final Long packageId) {
+        final ContractPackage pkg = contractPackageRepository.findById(packageId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Package not found"));
+        if (!VALIDATED_STATUS_CODE.equals(pkg.getStatus().getCode())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Package is not submitted");
+        }
+        final List<Submission> submissions = submissionRepository.findByContractPackage_Id(packageId);
+        for (final Submission s : submissions) {
+            if (!SUBMISSION_PENDING_CODE.equals(s.getStatus().getCode())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "The submission has already been picked up");
+            }
+        }
+        final LkpPackageStatus assembly = lkpPackageStatusRepository.findByCode(ASSEMBLY_STATUS_CODE)
+            .orElseThrow(() -> seedMissing("lkp_package_status", ASSEMBLY_STATUS_CODE));
+        final LkpStagedDocumentStatus startStatus = lkpStagedDocumentStatusRepository.findByCode(STAGED_DEFAULT_CODE)
+            .orElseThrow(() -> seedMissing("lkp_staged_document_status", STAGED_DEFAULT_CODE));
+        submissionRepository.deleteAll(submissions);
+        for (final PackageDocument link : packageDocumentRepository.findDetailedByPackageId(packageId)) {
+            link.getStagedDocument().setStatus(startStatus);
+            stagedDocumentRepository.save(link.getStagedDocument());
+        }
+        pkg.setStatus(assembly);
+        contractPackageRepository.save(pkg);
+    }
+
+    private static ResponseStatusException seedMissing(final String table, final String code) {
+        return new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Missing " + table + " row: " + code);
     }
 
     private ContractPackage loadDraftPackage(final Long packageId) {

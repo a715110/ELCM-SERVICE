@@ -54,7 +54,8 @@ public class ContractPackageService {
                 d.getAssigneeLoginId(),
                 d.getRolesAssigned() + "/" + d.getDocCount() + " roles",
                 d.getStatus(),
-                d.getStatusCode()));
+                d.getStatusCode(),
+                (int) d.getRolesAssigned()));
         }
         return rows;
     }
@@ -96,6 +97,14 @@ public class ContractPackageService {
 
     public void removeDocument(final Long packageId, final Long stagedDocumentId) {
         dataService.removeDocument(packageId, stagedDocumentId);
+    }
+
+    public void submit(final Long packageId, final String callerLoginId) {
+        dataService.submit(packageId, callerLoginId);
+    }
+
+    public void unsubmit(final Long packageId) {
+        dataService.unsubmit(packageId);
     }
 
     public void reassign(final Long packageId, final ReassignPackageRequest request) {

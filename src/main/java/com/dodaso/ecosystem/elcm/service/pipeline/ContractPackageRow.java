@@ -32,4 +32,5 @@ public class ContractPackageRow implements Serializable {
     private final String roles;
     private final String status;
     private final String statusCode;
+    private final int rolesAssigned;
 }
