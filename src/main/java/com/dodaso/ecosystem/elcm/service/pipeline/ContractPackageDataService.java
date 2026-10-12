@@ -233,8 +233,8 @@ public class ContractPackageDataService {
     }
 
     /**
-     * Unsubmit, allowed only while nobody has picked the submission up (every submission of the
-     * package is still PENDING). The submission rows are deleted, the documents go back to their
+     * Unsubmit, allowed only while nobody has picked the submission up (the newest submission of
+     * the package is still PENDING). That submission row is deleted, the documents go back to their
      * starting status, and the package returns to ASSEMBLY. 404 unknown package, 409 not
      * submitted or already picked up.
      */
@@ -245,17 +245,19 @@ public class ContractPackageDataService {
         if (!VALIDATED_STATUS_CODE.equals(pkg.getStatus().getCode())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Package is not submitted");
         }
-        final List<Submission> submissions = submissionRepository.findByContractPackage_Id(packageId);
-        for (final Submission s : submissions) {
-            if (!SUBMISSION_PENDING_CODE.equals(s.getStatus().getCode())) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "The submission has already been picked up");
-            }
+        // Only the newest submission counts: older ones are history (a declined submission stays
+        // on record after the package returns to Assembly and is submitted again).
+        final Submission newest = submissionRepository.findByContractPackage_Id(packageId).stream()
+            .max(java.util.Comparator.comparing(Submission::getId))
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Package is not submitted"));
+        if (!SUBMISSION_PENDING_CODE.equals(newest.getStatus().getCode())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "The submission has already been picked up");
         }
         final LkpPackageStatus assembly = lkpPackageStatusRepository.findByCode(ASSEMBLY_STATUS_CODE)
             .orElseThrow(() -> seedMissing("lkp_package_status", ASSEMBLY_STATUS_CODE));
         final LkpStagedDocumentStatus startStatus = lkpStagedDocumentStatusRepository.findByCode(STAGED_DEFAULT_CODE)
             .orElseThrow(() -> seedMissing("lkp_staged_document_status", STAGED_DEFAULT_CODE));
-        submissionRepository.deleteAll(submissions);
+        submissionRepository.delete(newest);
         for (final PackageDocument link : packageDocumentRepository.findDetailedByPackageId(packageId)) {
             link.getStagedDocument().setStatus(startStatus);
             stagedDocumentRepository.save(link.getStagedDocument());

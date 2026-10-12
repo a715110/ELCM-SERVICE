@@ -42,8 +42,9 @@ import org.springframework.web.server.ResponseStatusException;
  * transaction proxy applies (same reason as ContractPackageDataService).
  *
  * Submission statuses: PENDING (waiting) -> PROCESSING (a worker has it) -> EXTRACTED (ready for
- * review) or FAILED (a person must look; Retry puts it back to PENDING).
- * Job statuses: QUEUED -> RUNNING -> COMPLETED or FAILED.
+ * review) or FAILED (a person must look; Retry puts it back to PENDING). A reviewer can end an
+ * EXTRACTED or FAILED submission as DECLINED (see ReviewStore), which returns the package to Assembly.
+ * Job statuses: QUEUED -> RUNNING -> COMPLETED or FAILED; COMPLETED becomes SUPERSEDED when the package is declined.
  */
 @Service
 @RequiredArgsConstructor
@@ -58,6 +59,8 @@ public class ExtractionStore {
     public static final String JOB_RUNNING = "RUNNING";
     public static final String JOB_COMPLETED = "COMPLETED";
     public static final String JOB_FAILED = "FAILED";
+    /** A completed job whose package was declined; the next submission extracts the document again. */
+    public static final String JOB_SUPERSEDED = "SUPERSEDED";
 
     private static final String WORKER = "extraction-worker";
 
@@ -145,7 +148,10 @@ public class ExtractionStore {
                 alreadyCompleted++;
                 continue;
             }
-            final ExtractionJob job = existing.orElseGet(ExtractionJob::new);
+            // A superseded job is history (the package was declined): keep it and extract afresh.
+            final boolean reuse = existing.isPresent()
+                && !JOB_SUPERSEDED.equals(existing.get().getStatus().getCode());
+            final ExtractionJob job = reuse ? existing.get() : new ExtractionJob();
             job.setStagedDocument(doc);
             job.setTemplate(template.get());
             job.setStatus(queued);

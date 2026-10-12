@@ -100,6 +100,11 @@ public class ExtractionReadService {
                 message = needsReview == 0 ? "Done. Nothing needs review."
                     : "Done. " + needsReview + " field(s) need review.";
             }
+            case ReviewStore.SUBMISSION_DECLINED -> {
+                state = "DECLINED";
+                message = "Declined by " + (submission.getDeclinedBy() == null ? "a reviewer" : submission.getDeclinedBy())
+                    + ": " + (submission.getDeclineReason() == null ? "" : submission.getDeclineReason());
+            }
             case ReviewStore.SUBMISSION_REVIEWED -> {
                 state = "REVIEWED";
                 message = "Review completed.";

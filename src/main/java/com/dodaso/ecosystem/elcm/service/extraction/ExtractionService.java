@@ -69,6 +69,11 @@ public class ExtractionService {
         reviewStore.complete(packageId);
     }
 
+    /** Reviewer: decline the package back to Assembly with a reason. */
+    public void decline(final Long packageId, final String reason, final String caller) {
+        reviewStore.decline(packageId, reason, caller);
+    }
+
     private static Set<Long> idsOf(final List<Long> ids) {
         return new HashSet<>(ids);
     }

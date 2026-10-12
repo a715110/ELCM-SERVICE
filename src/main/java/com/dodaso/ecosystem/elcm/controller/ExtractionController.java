@@ -6,6 +6,7 @@ import com.dodaso.ecosystem.elcm.security.RequiresPermission;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionResults;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionService;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionStatus;
+import com.dodaso.ecosystem.elcm.service.extraction.DeclineRequest;
 import com.dodaso.ecosystem.elcm.service.extraction.SaveFieldRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
@@ -23,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
  * Extraction progress, results and review of a submitted package (ADDED 2026-10-11, review
  * endpoints 2026-10-12). The extraction itself runs in the background (ExtractionWorker); the
  * screen polls /extraction for progress. Reads need pipeline:view, Retry needs pipeline:submit,
- * and the review writes (save a field, confirm, complete) need pipeline:review, which the
+ * and the review writes (save a field, confirm, complete, decline) need pipeline:review, which the
  * submitting roles do not have.
  */
 @RestController
@@ -80,5 +81,17 @@ public class ExtractionController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void complete(@PathVariable final Long id) {
         extractionService.completeReview(id);
+    }
+
+    /**
+     * Reviewer: decline the package back to Assembly with a reason. 204; 400 no reason, 404 no
+     * submission, 409 not declinable (still running, already reviewed or declined).
+     */
+    @PostMapping("/decline")
+    @RequiresPermission(ElcmPermission.PIPELINE_REVIEW)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void decline(@PathVariable final Long id, @RequestBody final DeclineRequest request,
+                        final HttpServletRequest httpRequest) {
+        extractionService.decline(id, request.reason(), callerIdentityResolver.loginIdOf(httpRequest));
     }
 }
