@@ -3,6 +3,7 @@ package com.dodaso.ecosystem.elcm.controller;
 import com.dodaso.ecosystem.elcm.security.CallerIdentityResolver;
 import com.dodaso.ecosystem.elcm.security.ElcmPermission;
 import com.dodaso.ecosystem.elcm.security.RequiresPermission;
+import com.dodaso.ecosystem.elcm.service.extraction.ApplyResult;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionResults;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionService;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionStatus;
@@ -89,6 +90,16 @@ public class ExtractionController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void complete(@PathVariable final Long id) {
         extractionService.completeReview(id);
+    }
+
+    /**
+     * Reviewer: write the reviewed values to the package's target contract record. 200 with the
+     * counts; 404 no submission, 409 not reviewed or already applied, 422 no target record.
+     */
+    @PostMapping("/apply")
+    @RequiresPermission(ElcmPermission.PIPELINE_REVIEW)
+    public ApplyResult apply(@PathVariable final Long id, final HttpServletRequest httpRequest) {
+        return extractionService.apply(id, callerIdentityResolver.loginIdOf(httpRequest));
     }
 
     /**

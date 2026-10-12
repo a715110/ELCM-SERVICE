@@ -21,6 +21,7 @@ public class ExtractionService {
     private final ExtractionReadService readService;
     private final ExtractionStore store;
     private final ReviewStore reviewStore;
+    private final ApplyStore applyStore;
     private final FileUploadLookupService fileUploadLookupService;
 
     public ExtractionStatus status(final Long packageId) {
@@ -72,6 +73,11 @@ public class ExtractionService {
     /** What the reviewer did to one field, oldest first. */
     public FieldHistory history(final Long packageId, final Long resultId) {
         return reviewStore.history(packageId, resultId);
+    }
+
+    /** Reviewer: write the reviewed values to the package's target contract record. */
+    public ApplyResult apply(final Long packageId, final String caller) {
+        return applyStore.apply(packageId, caller);
     }
 
     /** Reviewer: decline the package back to Assembly with a reason. */

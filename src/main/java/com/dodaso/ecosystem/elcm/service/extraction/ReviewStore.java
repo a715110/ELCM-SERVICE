@@ -244,7 +244,7 @@ public class ReviewStore {
     }
 
     /** The value that counts: the corrected one when there is one, otherwise what the extractor found. */
-    private static String effective(final ExtractionFieldResult r) {
+    static String effective(final ExtractionFieldResult r) {
         return r.getCorrectedValue() != null ? r.getCorrectedValue() : r.getExtractedValue();
     }
 
@@ -311,7 +311,8 @@ public class ReviewStore {
         return ids;
     }
 
-    private List<ExtractionFieldResult> allResults(final Long packageId) {
+    /** Package private: ApplyStore reads the same results the reviewer saw. */
+    List<ExtractionFieldResult> allResults(final Long packageId) {
         final List<ExtractionFieldResult> all = new ArrayList<>();
         for (final ExtractionJob job : latestJobs(packageId)) {
             all.addAll(resultRepository.findDetailedByJobId(job.getId()));

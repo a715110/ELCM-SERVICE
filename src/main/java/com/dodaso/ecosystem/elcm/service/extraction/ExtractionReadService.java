@@ -109,6 +109,11 @@ public class ExtractionReadService {
                 state = "REVIEWED";
                 message = "Review completed.";
             }
+            case ApplyStore.SUBMISSION_APPLIED -> {
+                state = "APPLIED";
+                final var target = submission.getContractPackage().getTargetRecord();
+                message = "Applied to contract record " + (target == null ? "" : target.getRecordCode()) + ".";
+            }
             case ExtractionStore.SUBMISSION_FAILED -> {
                 state = "FAILED";
                 message = failed > 0 ? failed + " document(s) failed." : "No document has an extraction template.";
