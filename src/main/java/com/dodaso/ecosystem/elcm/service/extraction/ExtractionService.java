@@ -1,0 +1,63 @@
+package com.dodaso.ecosystem.elcm.service.extraction;
+
+import com.dodaso.ecosystem.common.dto.FileUploadDTO;
+import com.dodaso.ecosystem.elcm.service.pipeline.FileUploadLookupService;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+/**
+ * Public face of extraction for the controller: progress, results, retry. Reads come from
+ * ExtractionReadService (database), then file names are added from common-service outside any
+ * transaction, the same split ContractPackageService uses.
+ */
+@Service
+@RequiredArgsConstructor
+public class ExtractionService {
+
+    private final ExtractionReadService readService;
+    private final ExtractionStore store;
+    private final FileUploadLookupService fileUploadLookupService;
+
+    public ExtractionStatus status(final Long packageId) {
+        final ExtractionStatus status = readService.status(packageId);
+        if (status.documents().isEmpty()) {
+            return status;
+        }
+        final Map<Long, FileUploadDTO> names = fileUploadLookupService.findByIds(
+            idsOf(status.documents().stream().map(ExtractionStatus.DocumentProgress::fileUploadId).toList()));
+        final List<ExtractionStatus.DocumentProgress> named = status.documents().stream()
+            .map(d -> d.withFileName(nameOf(names, d.fileUploadId()))).toList();
+        return new ExtractionStatus(status.packageId(), status.submissionId(), status.state(), status.message(),
+            status.queuePosition(), status.documentsTotal(), status.documentsDone(), status.documentsFailed(),
+            status.needsReviewTotal(), named);
+    }
+
+    public ExtractionResults results(final Long packageId) {
+        final ExtractionResults results = readService.results(packageId);
+        if (results.documents().isEmpty()) {
+            return results;
+        }
+        final Map<Long, FileUploadDTO> names = fileUploadLookupService.findByIds(
+            idsOf(results.documents().stream().map(ExtractionResults.DocumentResult::fileUploadId).toList()));
+        return new ExtractionResults(results.packageId(), results.documents().stream()
+            .map(d -> d.withFileName(nameOf(names, d.fileUploadId()))).toList());
+    }
+
+    /** Failed extraction back to the queue; only the failed documents run again. */
+    public void retry(final Long packageId) {
+        store.requeueFailed(packageId);
+    }
+
+    private static Set<Long> idsOf(final List<Long> ids) {
+        return new HashSet<>(ids);
+    }
+
+    private static String nameOf(final Map<Long, FileUploadDTO> names, final Long id) {
+        final FileUploadDTO dto = names.get(id);
+        return dto != null ? dto.getFileName() : "File " + id;
+    }
+}

@@ -1,0 +1,145 @@
+package com.dodaso.ecosystem.elcm.service.extraction;
+
+import com.dodaso.ecosystem.baseline.common.constant.ServiceDiscoveryEnum;
+import com.dodaso.ecosystem.baseline.common.proxy.RESTServiceClient;
+import com.dodaso.ecosystem.common.dto.FileUploadDTO;
+import com.dodaso.ecosystem.elcm.service.pipeline.FileUploadLookupService;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpMethod;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+/**
+ * The background side of "Submit for extraction". Every poll interval it looks for the oldest
+ * PENDING submission, takes it, and extracts its documents one at a time (one document at a time
+ * on purpose: the model uses every CPU core, so running two at once only makes both slower).
+ * Nobody waits for this: the user submits, the screen shows progress by polling the status
+ * endpoint, and the reviewer opens the package when it reads EXTRACTED.
+ *
+ * Failure handling: a document is tried maxAttempts times; if it still fails the job is FAILED
+ * with the reason and the submission ends FAILED (the documents that did work keep their
+ * results, and Retry only redoes the failed ones). A worker that dies mid-way is recovered by
+ * the heartbeat check in ExtractionStore.recoverStale.
+ */
+@Component
+public class ExtractionWorker {
+
+    private static final Logger log = LoggerFactory.getLogger(ExtractionWorker.class);
+
+    private final ExtractionProperties properties;
+    private final ExtractionStore store;
+    private final ExtractorClient extractorClient;
+    private final FileUploadLookupService fileUploadLookupService;
+    private final RESTServiceClient restServiceClient;
+
+    private final AtomicBoolean busy = new AtomicBoolean(false);
+
+    public ExtractionWorker(final ExtractionProperties properties, final ExtractionStore store,
+                            final ExtractorClient extractorClient,
+                            final FileUploadLookupService fileUploadLookupService,
+                            final RESTServiceClient restServiceClient) {
+        this.properties = properties;
+        this.store = store;
+        this.extractorClient = extractorClient;
+        this.fileUploadLookupService = fileUploadLookupService;
+        this.restServiceClient = restServiceClient;
+    }
+
+    @Scheduled(fixedDelayString = "${elcm.extraction.poll-interval-ms:10000}",
+        initialDelayString = "${elcm.extraction.poll-interval-ms:10000}")
+    public void poll() {
+        if (!properties.isEnabled() || !busy.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            store.recoverStale(properties.getStaleMinutes());
+            final Long submissionId = store.claimNext();
+            if (submissionId != null) {
+                process(submissionId);
+            }
+        } catch (final Exception e) {
+            // Never let an exception stop the schedule; the next poll starts clean.
+            log.error("Extraction poll failed", e);
+        } finally {
+            busy.set(false);
+        }
+    }
+
+    /** Public for tests. Runs one claimed submission to its end. */
+    public void process(final Long submissionId) {
+        boolean allOk = true;
+        try {
+            final ExtractionStore.Prepared prepared = store.prepareJobs(submissionId);
+            if (prepared.tickets().isEmpty() && prepared.alreadyCompleted() == 0) {
+                // No document has an active template with an extractor id: a configuration
+                // problem, not a success. prepareJobs logged which documents were skipped.
+                log.error("Extraction: submission {} has no document with an extraction template", submissionId);
+                allOk = false;
+            }
+            for (final ExtractionStore.JobTicket ticket : prepared.tickets()) {
+                if (!runTicket(submissionId, ticket)) {
+                    allOk = false;
+                }
+            }
+        } catch (final Exception e) {
+            log.error("Extraction: submission {} failed", submissionId, e);
+            allOk = false;
+        }
+        store.finish(submissionId, allOk);
+        log.info("Extraction: submission {} finished, ok={}", submissionId, allOk);
+    }
+
+    private boolean runTicket(final Long submissionId, final ExtractionStore.JobTicket ticket) {
+        String lastError = "unknown error";
+        for (int attempt = 1; attempt <= Math.max(1, properties.getMaxAttempts()); attempt++) {
+            store.markRunning(ticket.jobId(), submissionId);
+            try {
+                final Map<Long, FileUploadDTO> meta = fileUploadLookupService.findByIds(Set.of(ticket.fileUploadId()));
+                final FileUploadDTO file = meta.get(ticket.fileUploadId());
+                if (file == null) {
+                    throw new ExtractorException("The file " + ticket.fileUploadId() + " was not found in file storage");
+                }
+                final byte[] content = download(ticket.fileUploadId());
+                final ExtractorResult result = extractorClient.extract(ticket.extractorTemplateId(),
+                    file.getFileName(), file.getContentType(), content);
+                store.saveResult(ticket.jobId(), submissionId, result);
+                return true;
+            } catch (final Exception e) {
+                lastError = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                log.warn("Extraction: job {} attempt {} failed: {}", ticket.jobId(), attempt, lastError);
+                if (attempt < properties.getMaxAttempts()) {
+                    sleep(properties.getRetryDelayMs());
+                }
+            }
+        }
+        store.markFailed(ticket.jobId(), submissionId, lastError);
+        return false;
+    }
+
+    private byte[] download(final Long fileUploadId) throws Exception {
+        final byte[] content = restServiceClient.callRESTService(
+            ServiceDiscoveryEnum.common_service.getServiceDiscoveryName(),
+            "/api/v1/files/" + fileUploadId + "/download",
+            null,
+            new ParameterizedTypeReference<byte[]>() {
+            },
+            HttpMethod.GET);
+        if (content == null || content.length == 0) {
+            throw new ExtractorException("The file " + fileUploadId + " is empty in file storage");
+        }
+        return content;
+    }
+
+    private static void sleep(final long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}
