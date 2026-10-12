@@ -14,7 +14,14 @@ public enum ElcmPermission {
   PIPELINE_SUBMIT("pipeline:submit"),
 
   /** Delete (soft delete) a staged document. Ownership is checked separately, in the service. */
-  PIPELINE_DELETE("pipeline:delete");
+  PIPELINE_DELETE("pipeline:delete"),
+
+  /**
+   * Review extracted values: correct a value, confirm fields, complete the review. Kept apart from
+   * pipeline:submit on purpose, so the people who submit documents are not the people who confirm
+   * what was extracted from them (separation of duties).
+   */
+  PIPELINE_REVIEW("pipeline:review");
 
   private final String code;
 

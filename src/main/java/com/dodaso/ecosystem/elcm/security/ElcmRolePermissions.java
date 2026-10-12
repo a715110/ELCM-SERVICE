@@ -32,7 +32,8 @@ public final class ElcmRolePermissions {
     put("Document Submitter", viewSubmitAndDelete);
     put("Business Submitter", viewSubmitAndDelete);
     put("Preparer", viewSubmitAndDelete);
-    put("Reviewer", viewOnly);
+    // Reviewers confirm extracted values. Submitting roles deliberately do not get this.
+    put("Reviewer", EnumSet.of(ElcmPermission.PIPELINE_VIEW, ElcmPermission.PIPELINE_REVIEW));
     put("Approver", viewOnly);
     put("Accountant", viewOnly);
     put("Controller", viewOnly);

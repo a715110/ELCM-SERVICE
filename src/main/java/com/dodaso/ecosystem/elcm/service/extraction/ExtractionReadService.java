@@ -100,6 +100,10 @@ public class ExtractionReadService {
                 message = needsReview == 0 ? "Done. Nothing needs review."
                     : "Done. " + needsReview + " field(s) need review.";
             }
+            case ReviewStore.SUBMISSION_REVIEWED -> {
+                state = "REVIEWED";
+                message = "Review completed.";
+            }
             case ExtractionStore.SUBMISSION_FAILED -> {
                 state = "FAILED";
                 message = failed > 0 ? failed + " document(s) failed." : "No document has an extraction template.";
@@ -129,11 +133,12 @@ public class ExtractionReadService {
             if (ExtractionStore.JOB_COMPLETED.equals(job.getStatus().getCode())) {
                 for (final ExtractionFieldResult r : resultRepository.findDetailedByJobId(job.getId())) {
                     final ExtractionTemplateField f = r.getTemplateField();
-                    fields.add(new ExtractionResults.FieldRow(f.getFieldKey(), f.getLabel(),
+                    fields.add(new ExtractionResults.FieldRow(r.getId(), f.getFieldKey(), f.getLabel(),
                         f.getDataType().getCode(), Boolean.TRUE.equals(f.getIsCritical()),
                         Boolean.TRUE.equals(f.getIsRequired()), r.getExtractedValue(), r.getCorrectedValue(),
                         r.getFieldStatus(), r.getQuote(), r.getProblem(), r.getNote(), r.getCandidates(),
-                        Boolean.TRUE.equals(r.getNeedsReviewFlag()), Boolean.TRUE.equals(r.getVerifiedFlag())));
+                        Boolean.TRUE.equals(r.getNeedsReviewFlag()), Boolean.TRUE.equals(r.getVerifiedFlag()),
+                        r.getVerifiedBy()));
                 }
             }
             docs.add(new ExtractionResults.DocumentResult(docId, link.getStagedDocument().getFileUploadId(), null,

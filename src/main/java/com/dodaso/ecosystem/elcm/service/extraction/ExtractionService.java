@@ -20,6 +20,7 @@ public class ExtractionService {
 
     private final ExtractionReadService readService;
     private final ExtractionStore store;
+    private final ReviewStore reviewStore;
     private final FileUploadLookupService fileUploadLookupService;
 
     public ExtractionStatus status(final Long packageId) {
@@ -50,6 +51,22 @@ public class ExtractionService {
     /** Failed extraction back to the queue; only the failed documents run again. */
     public void retry(final Long packageId) {
         store.requeueFailed(packageId);
+    }
+
+    /** Reviewer: correct and/or confirm one field. */
+    public void saveField(final Long packageId, final Long resultId, final String correctedValue,
+                          final boolean verified, final String caller) {
+        reviewStore.saveField(packageId, resultId, correctedValue, verified, caller);
+    }
+
+    /** Reviewer: confirm every field the extractor verified. Returns how many were confirmed. */
+    public int confirmVerified(final Long packageId, final String caller) {
+        return reviewStore.confirmVerified(packageId, caller);
+    }
+
+    /** Reviewer: complete the review (422 while critical or flagged fields are unconfirmed). */
+    public void completeReview(final Long packageId) {
+        reviewStore.complete(packageId);
     }
 
     private static Set<Long> idsOf(final List<Long> ids) {

@@ -20,6 +20,7 @@ public record ExtractionResults(Long packageId, List<DocumentResult> documents) 
     }
 
     public record FieldRow(
+        Long resultId,
         String key,
         String label,
         String dataType,
@@ -33,6 +34,7 @@ public record ExtractionResults(Long packageId, List<DocumentResult> documents) 
         String note,
         String candidates,
         boolean needsReview,
-        boolean verified) {
+        boolean verified,
+        String verifiedBy) {
     }
 }
