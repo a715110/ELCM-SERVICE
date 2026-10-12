@@ -69,6 +69,11 @@ public class ExtractionService {
         reviewStore.complete(packageId);
     }
 
+    /** What the reviewer did to one field, oldest first. */
+    public FieldHistory history(final Long packageId, final Long resultId) {
+        return reviewStore.history(packageId, resultId);
+    }
+
     /** Reviewer: decline the package back to Assembly with a reason. */
     public void decline(final Long packageId, final String reason, final String caller) {
         reviewStore.decline(packageId, reason, caller);

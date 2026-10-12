@@ -1,11 +1,13 @@
 package com.dodaso.ecosystem.elcm.service.extraction;
 
 import com.dodaso.ecosystem.elcm.entity.extraction.ExtractionFieldResult;
+import com.dodaso.ecosystem.elcm.entity.extraction.ExtractionFieldRevision;
 import com.dodaso.ecosystem.elcm.entity.extraction.ExtractionJob;
 import com.dodaso.ecosystem.elcm.entity.pipeline.ContractPackage;
 import com.dodaso.ecosystem.elcm.entity.pipeline.PackageDocument;
 import com.dodaso.ecosystem.elcm.entity.pipeline.Submission;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionFieldResultRepository;
+import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionFieldRevisionRepository;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionJobRepository;
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpExtractionJobStatusRepository;
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpPackageStatusRepository;
@@ -43,6 +45,9 @@ import org.springframework.web.server.ResponseStatusException;
  *       extractor flagged for review, must be confirmed (verified_flag) first. This is the rule in
  *       the schema comment on extraction_field_result (SDS 4.3).
  * Decline (ADDED 2026-10-12) sends the package back to Assembly with a reason; see decline().
+ * Every change is also appended to extraction_field_revision (who, when, before, after), so a
+ * field corrected several times keeps its whole history; extraction_field_result keeps only the
+ * current state. Saving without a change records nothing.
  * Completing sets the submission to REVIEWED and nothing else: writing the confirmed values to the
  * contract record is a separate step that is not built yet.
  */
@@ -53,6 +58,11 @@ public class ReviewStore {
     public static final String SUBMISSION_REVIEWED = "REVIEWED";
     public static final String SUBMISSION_DECLINED = "DECLINED";
     public static final int MAX_REASON_LENGTH = 1000;
+
+    private static final String ACTION_CORRECTED = "CORRECTED";
+    private static final String ACTION_CONFIRMED = "CONFIRMED";
+    private static final String ACTION_UNCONFIRMED = "UNCONFIRMED";
+    private static final String ACTION_CONFIRM_ALL = "CONFIRM_ALL";
 
     private static final String PACKAGE_VALIDATED = "VALIDATED";
     private static final String PACKAGE_ASSEMBLY = "ASSEMBLY";
@@ -69,6 +79,7 @@ public class ReviewStore {
     private final StagedDocumentRepository stagedDocumentRepository;
     private final LkpStagedDocumentStatusRepository lkpStagedDocumentStatusRepository;
     private final LkpExtractionJobStatusRepository lkpJobStatusRepository;
+    private final ExtractionFieldRevisionRepository revisionRepository;
 
     /**
      * Saves one field: the corrected value (blank clears it) and whether the reviewer confirms it.
@@ -83,14 +94,22 @@ public class ReviewStore {
         if (!latestJobIds(packageId).contains(result.getJob().getId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Field is not part of this package");
         }
-        final String value = ReviewRules.normalize(correctedValue);
-        final String error = ReviewRules.validate(result.getTemplateField().getDataType().getCode(), value);
+        final String typeCode = result.getTemplateField().getDataType().getCode();
+        final String value = ReviewRules.normalize(typeCode, correctedValue);
+        final String error = ReviewRules.validate(typeCode, value);
         if (error != null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, error);
         }
+        final String beforeEffective = effective(result);
+        final boolean valueChanged = !java.util.Objects.equals(result.getCorrectedValue(), value);
+        final boolean wasVerified = Boolean.TRUE.equals(result.getVerifiedFlag());
         result.setCorrectedValue(value);
         applyVerified(result, verified, caller);
         resultRepository.save(result);
+        if (valueChanged || wasVerified != verified) {
+            final String action = valueChanged ? ACTION_CORRECTED : (verified ? ACTION_CONFIRMED : ACTION_UNCONFIRMED);
+            record(result, beforeEffective, action, caller);
+        }
         submissionRepository.touch(submission.getId(), now());
     }
 
@@ -109,6 +128,7 @@ public class ReviewStore {
                 && !Boolean.TRUE.equals(r.getVerifiedFlag())) {
                 applyVerified(r, true, caller);
                 resultRepository.save(r);
+                record(r, effective(r), ACTION_CONFIRM_ALL, caller);
                 changed++;
             }
         }
@@ -200,6 +220,47 @@ public class ReviewStore {
     private static ResponseStatusException seedMissing(final String table, final String code) {
         return new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
             "Missing " + table + " row: " + code + " (run decline_status.sql)");
+    }
+
+    /**
+     * The history of one field (any caller who can view the package). 404 when the field is not
+     * part of the package's current extraction.
+     */
+    @Transactional(readOnly = true)
+    public FieldHistory history(final Long packageId, final Long resultId) {
+        final ExtractionFieldResult result = resultRepository.findById(resultId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Field not found"));
+        if (!latestJobIds(packageId).contains(result.getJob().getId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Field is not part of this package");
+        }
+        final List<FieldHistory.Revision> rows = new ArrayList<>();
+        for (final ExtractionFieldRevision r : revisionRepository.findByFieldResult_IdOrderByRevisionNoAsc(resultId)) {
+            rows.add(new FieldHistory.Revision(r.getRevisionNo(), r.getAction(), r.getPreviousValue(),
+                r.getNewValue(), Boolean.TRUE.equals(r.getConfirmedFlag()), r.getChangedBy(),
+                r.getChangedAt() == null ? null : r.getChangedAt().toString(),
+                r.getReason()));
+        }
+        return new FieldHistory(resultId, result.getTemplateField().getLabel(), result.getExtractedValue(), rows);
+    }
+
+    /** The value that counts: the corrected one when there is one, otherwise what the extractor found. */
+    private static String effective(final ExtractionFieldResult r) {
+        return r.getCorrectedValue() != null ? r.getCorrectedValue() : r.getExtractedValue();
+    }
+
+    /** Appends one revision. previous is the effective value before the change; the new one is read from the result. */
+    private void record(final ExtractionFieldResult r, final String previous, final String action,
+                        final String caller) {
+        final ExtractionFieldRevision rev = new ExtractionFieldRevision();
+        rev.setFieldResult(r);
+        rev.setRevisionNo(revisionRepository.maxRevisionNo(r.getId()) + 1);
+        rev.setPreviousValue(previous);
+        rev.setNewValue(effective(r));
+        rev.setConfirmedFlag(Boolean.TRUE.equals(r.getVerifiedFlag()));
+        rev.setAction(action);
+        rev.setChangedBy(caller);
+        rev.setChangedAt(now());
+        revisionRepository.save(rev);
     }
 
     private static void applyVerified(final ExtractionFieldResult r, final boolean verified, final String caller) {

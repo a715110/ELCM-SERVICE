@@ -25,6 +25,21 @@ public final class ReviewRules {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    /**
+     * Like normalize, plus the formatting people type for numbers: for a NUMBER field a currency
+     * symbol, thousands commas, spaces and a trailing USD are removed, so $18,750 is stored as
+     * 18750. Other types are only trimmed. Anything that is still not a number is left as typed
+     * and validate() refuses it.
+     */
+    public static String normalize(final String dataTypeCode, final String value) {
+        final String base = normalize(value);
+        if (base == null || !"NUMBER".equals(dataTypeCode)) {
+            return base;
+        }
+        final String cleaned = base.replaceAll("(?i)usd", "").replaceAll("[$,\\s]", "");
+        return cleaned.isEmpty() ? base : cleaned;
+    }
+
     /** Null when the value is acceptable for the type, otherwise a message for the reviewer. */
     public static String validate(final String dataTypeCode, final String value) {
         if (value == null) {
@@ -39,7 +54,7 @@ public final class ReviewRules {
         switch (dataTypeCode) {
             case "NUMBER":
                 return NUMBER.matcher(value).matches() ? null
-                    : "Enter a plain number, for example 15500 or 3.5 (no currency symbol or commas).";
+                    : "Enter a plain number, for example 15500 or 3.5 (a currency symbol and commas are removed for you).";
             case "DATE":
                 try {
                     LocalDate.parse(value);

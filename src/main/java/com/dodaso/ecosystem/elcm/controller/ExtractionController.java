@@ -6,6 +6,7 @@ import com.dodaso.ecosystem.elcm.security.RequiresPermission;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionResults;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionService;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionStatus;
+import com.dodaso.ecosystem.elcm.service.extraction.FieldHistory;
 import com.dodaso.ecosystem.elcm.service.extraction.DeclineRequest;
 import com.dodaso.ecosystem.elcm.service.extraction.SaveFieldRequest;
 import jakarta.servlet.http.HttpServletRequest;
@@ -47,6 +48,13 @@ public class ExtractionController {
     @RequiresPermission(ElcmPermission.PIPELINE_VIEW)
     public ExtractionResults results(@PathVariable final Long id) {
         return extractionService.results(id);
+    }
+
+    /** History of one field: every correction and confirmation, oldest first. 404 when the field is not in this package. */
+    @GetMapping("/fields/{resultId}/history")
+    @RequiresPermission(ElcmPermission.PIPELINE_VIEW)
+    public FieldHistory history(@PathVariable final Long id, @PathVariable final Long resultId) {
+        return extractionService.history(id, resultId);
     }
 
     /** Puts a FAILED extraction back in the queue: 204; 404 no submission, 409 not failed. */
