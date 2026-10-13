@@ -43,8 +43,9 @@ import org.springframework.web.server.ResponseStatusException;
  *       chosen record is not in the package's workspace or is not ACTIVE or PENDING. Nothing is
  *       created. A package that has a target ignores targetRecordId.
  * What is written:
- *   - The value of a field is the corrected value when the reviewer entered one, otherwise the
- *     extracted value. A field with no value, or a value that does not fit its type, is skipped.
+ *   - Only fields the reviewer confirmed (verified_flag) are written. The value is the corrected
+ *     value when the reviewer entered one, otherwise the extracted value. A field with no value,
+ *     one that is not confirmed, or a value that does not fit its type, is skipped and reported.
  *   - Each value becomes a contract_term row (field_key, typed value, where it came from: the
  *     submission, the field result and its latest revision number, who applied it and when).
  *   - A term whose value differs from the one in force supersedes it (old row kept); an identical
@@ -124,6 +125,10 @@ public class ApplyStore {
                 if (text == null && !seen.contains(f.getFieldKey())) {
                     skipped.add(f.getLabel() + " (no value)");
                 }
+                continue;
+            }
+            if (!Boolean.TRUE.equals(r.getVerifiedFlag())) {
+                skipped.add(f.getLabel() + " (not confirmed)");
                 continue;
             }
             final String type = f.getDataType().getCode();
