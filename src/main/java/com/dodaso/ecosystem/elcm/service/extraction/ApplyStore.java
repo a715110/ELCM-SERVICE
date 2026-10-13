@@ -20,6 +20,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -38,7 +39,9 @@ import org.springframework.web.server.ResponseStatusException;
  * Rules (status codes the REST layer returns):
  *   404 the package has no submission.
  *   409 the newest submission is not REVIEWED (not reviewed yet, declined, or already APPLIED).
- *   422 the package has no target contract record: link it to one first. Nothing is created.
+ *   422 the package has no target contract record and none was chosen (targetRecordId), or the
+ *       chosen record is not in the package's workspace or is not ACTIVE or PENDING. Nothing is
+ *       created. A package that has a target ignores targetRecordId.
  * What is written:
  *   - The value of a field is the corrected value when the reviewer entered one, otherwise the
  *     extracted value. A field with no value, or a value that does not fit its type, is skipped.
@@ -57,6 +60,8 @@ import org.springframework.web.server.ResponseStatusException;
 public class ApplyStore {
 
     public static final String SUBMISSION_APPLIED = "APPLIED";
+    /** Records that can receive values: not superseded, not archived. */
+    static final List<String> TARGET_STATUS_CODES = List.of("ACTIVE", "PENDING");
     public static final String PACKAGE_COMPLETED = "COMPLETED";
     private static final String LESSOR_KEY = "lessor_name";
 
@@ -70,8 +75,22 @@ public class ApplyStore {
     private final ContractPackageRepository contractPackageRepository;
     private final LkpPackageStatusRepository lkpPackageStatusRepository;
 
+    /** The records a reviewer can choose when the package has no target: same workspace, active or pending. */
+    @Transactional(readOnly = true)
+    public List<TargetCandidate> candidates(final Long packageId) {
+        final var pkg = contractPackageRepository.findById(packageId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Package not found"));
+        final List<TargetCandidate> rows = new ArrayList<>();
+        for (final ContractRecord r : contractRecordRepository.findByWorkspace_IdAndStatus_CodeInOrderByRecordCode(
+            pkg.getWorkspace().getId(), TARGET_STATUS_CODES)) {
+            rows.add(new TargetCandidate(r.getId(), r.getRecordCode(), r.getContractType().getLabel(),
+                r.getCounterparty() == null ? null : r.getCounterparty().getName(), r.getStatus().getLabel()));
+        }
+        return rows;
+    }
+
     @Transactional
-    public ApplyResult apply(final Long packageId, final String caller) {
+    public ApplyResult apply(final Long packageId, final Long targetRecordId, final String caller) {
         final Submission submission = submissionRepository.findByContractPackage_Id(packageId).stream()
             .max(Comparator.comparing(Submission::getId))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "The package has no submission"));
@@ -81,11 +100,13 @@ public class ApplyStore {
                 ? "The reviewed values were already applied"
                 : "Only a package whose review is completed can be applied");
         }
-        final ContractRecord record = submission.getContractPackage().getTargetRecord();
-        if (record == null) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                "The package has no target contract record. Link it to one first.");
+        final var chosenFor = submission.getContractPackage();
+        ContractRecord target = chosenFor.getTargetRecord();
+        if (target == null) {
+            target = chooseTarget(chosenFor, targetRecordId);
+            chosenFor.setTargetRecord(target);
         }
+        final ContractRecord record = target;
         final LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         final Map<String, ContractTerm> inForce = new HashMap<>();
         for (final ContractTerm t : termRepository.findByContractRecord_IdAndSupersededAtIsNull(record.getId())) {
@@ -144,6 +165,28 @@ public class ApplyStore {
                 "Missing lkp_package_status row: COMPLETED (run package_completed.sql)")));
         contractPackageRepository.save(pkg);
         return new ApplyResult(written, unchanged, skipped, counterparty[0], counterparty[1], record.getRecordCode());
+    }
+
+    /** The package has no target: the reviewer must have chosen a record of the package's workspace that can receive values. */
+    private ContractRecord chooseTarget(final com.dodaso.ecosystem.elcm.entity.pipeline.ContractPackage pkg,
+                                        final Long targetRecordId) {
+        if (targetRecordId == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "The package has no target contract record. Choose one.");
+        }
+        final ContractRecord chosen = contractRecordRepository.findById(targetRecordId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "The chosen contract record does not exist"));
+        if (!chosen.getWorkspace().getId().equals(pkg.getWorkspace().getId())) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "The chosen contract record is in another workspace");
+        }
+        final Collection<String> allowed = TARGET_STATUS_CODES;
+        if (!allowed.contains(chosen.getStatus().getCode())) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "The chosen contract record is " + chosen.getStatus().getLabel().toLowerCase() + " and cannot receive values");
+        }
+        return chosen;
     }
 
     /** Returns {name, action}: CREATED, LINKED (existing counterparty linked), UNCHANGED (record has one) or NONE. */

@@ -3,7 +3,9 @@ package com.dodaso.ecosystem.elcm.controller;
 import com.dodaso.ecosystem.elcm.security.CallerIdentityResolver;
 import com.dodaso.ecosystem.elcm.security.ElcmPermission;
 import com.dodaso.ecosystem.elcm.security.RequiresPermission;
+import com.dodaso.ecosystem.elcm.service.extraction.ApplyRequest;
 import com.dodaso.ecosystem.elcm.service.extraction.ApplyResult;
+import com.dodaso.ecosystem.elcm.service.extraction.TargetCandidate;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionResults;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionService;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionStatus;
@@ -11,6 +13,7 @@ import com.dodaso.ecosystem.elcm.service.extraction.FieldHistory;
 import com.dodaso.ecosystem.elcm.service.extraction.DeclineRequest;
 import com.dodaso.ecosystem.elcm.service.extraction.SaveFieldRequest;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -94,12 +97,23 @@ public class ExtractionController {
 
     /**
      * Reviewer: write the reviewed values to the package's target contract record. 200 with the
-     * counts; 404 no submission, 409 not reviewed or already applied, 422 no target record.
+     * counts; 404 no submission, 409 not reviewed or already applied, 422 no target record
+     * (and none chosen in the body), or the chosen record cannot be used.
      */
     @PostMapping("/apply")
     @RequiresPermission(ElcmPermission.PIPELINE_REVIEW)
-    public ApplyResult apply(@PathVariable final Long id, final HttpServletRequest httpRequest) {
-        return extractionService.apply(id, callerIdentityResolver.loginIdOf(httpRequest));
+    public ApplyResult apply(@PathVariable final Long id,
+                             @RequestBody(required = false) final ApplyRequest request,
+                             final HttpServletRequest httpRequest) {
+        return extractionService.apply(id, request == null ? null : request.targetRecordId(),
+            callerIdentityResolver.loginIdOf(httpRequest));
+    }
+
+    /** Records the reviewer can choose as the target when the package has none: same workspace, active or pending. */
+    @GetMapping("/target-candidates")
+    @RequiresPermission(ElcmPermission.PIPELINE_REVIEW)
+    public List<TargetCandidate> targetCandidates(@PathVariable final Long id) {
+        return extractionService.targetCandidates(id);
     }
 
     /**

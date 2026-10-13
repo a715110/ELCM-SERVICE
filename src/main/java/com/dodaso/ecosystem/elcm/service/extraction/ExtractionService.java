@@ -76,8 +76,13 @@ public class ExtractionService {
     }
 
     /** Reviewer: write the reviewed values to the package's target contract record. */
-    public ApplyResult apply(final Long packageId, final String caller) {
-        return applyStore.apply(packageId, caller);
+    public ApplyResult apply(final Long packageId, final Long targetRecordId, final String caller) {
+        return applyStore.apply(packageId, targetRecordId, caller);
+    }
+
+    /** Reviewer: the records a package without a target can be applied to. */
+    public List<TargetCandidate> targetCandidates(final Long packageId) {
+        return applyStore.candidates(packageId);
     }
 
     /** Reviewer: decline the package back to Assembly with a reason. */
