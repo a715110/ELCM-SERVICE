@@ -189,7 +189,8 @@ public class ReviewStore {
     /**
      * Declines the package back to Assembly (ADDED 2026-10-12). Allowed while the newest submission
      * is EXTRACTED or FAILED. The reason is required (400 when blank or over 1000 characters). Then,
-     * in one transaction: the submission becomes DECLINED with reason, who and when (kept as
+     * in one transaction (the submission is claimed first with a conditional update, so a concurrent
+     * Retry cannot be overwritten): the submission becomes DECLINED with reason, who and when (kept as
      * history); the package returns VALIDATED to ASSEMBLY; its documents return SUBMITTED to
      * UPLOADING; and the completed extraction jobs become SUPERSEDED, so submitting again extracts
      * every document afresh instead of reusing results the reviewer rejected. 404 no submission,
@@ -217,7 +218,17 @@ public class ReviewStore {
         if (!PACKAGE_VALIDATED.equals(pkg.getStatus().getCode())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "The package is not submitted");
         }
-        // Jobs first: latestJobs() reads the completed jobs of the package's documents.
+        // Claim the transition first, in one conditional update: if a Retry (or anything else) moved
+        // the submission since it was read, nothing below runs and the caller gets 409.
+        final int claimed = submissionRepository.decline(submission.getId(), submission.getStatus(),
+            lkpSubmissionStatusRepository.findByCode(SUBMISSION_DECLINED)
+                .orElseThrow(() -> seedMissing("lkp_submission_status", SUBMISSION_DECLINED)),
+            text, caller, now());
+        if (claimed != 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "The extraction changed while you were declining it. Reload and try again.");
+        }
+        // Jobs next: latestJobs() reads the completed jobs of the package's documents.
         final var superseded = lkpJobStatusRepository.findByCode(ExtractionStore.JOB_SUPERSEDED)
             .orElseThrow(() -> seedMissing("lkp_extraction_job_status", ExtractionStore.JOB_SUPERSEDED));
         for (final ExtractionJob job : latestJobs(packageId)) {
@@ -233,13 +244,6 @@ public class ReviewStore {
         pkg.setStatus(lkpPackageStatusRepository.findByCode(PACKAGE_ASSEMBLY)
             .orElseThrow(() -> seedMissing("lkp_package_status", PACKAGE_ASSEMBLY)));
         contractPackageRepository.save(pkg);
-
-        submission.setStatus(lkpSubmissionStatusRepository.findByCode(SUBMISSION_DECLINED)
-            .orElseThrow(() -> seedMissing("lkp_submission_status", SUBMISSION_DECLINED)));
-        submission.setDeclineReason(text);
-        submission.setDeclinedBy(caller);
-        submission.setDeclinedAt(now());
-        submissionRepository.save(submission);
     }
 
     private static ResponseStatusException seedMissing(final String table, final String code) {
