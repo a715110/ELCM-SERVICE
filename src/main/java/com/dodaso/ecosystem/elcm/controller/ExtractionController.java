@@ -7,6 +7,8 @@ import com.dodaso.ecosystem.elcm.service.extraction.ApplyRequest;
 import com.dodaso.ecosystem.elcm.service.extraction.ApplyResult;
 import com.dodaso.ecosystem.elcm.service.extraction.TargetCandidate;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionCoverage;
+import com.dodaso.ecosystem.elcm.service.extraction.ReviewAccess;
+import com.dodaso.ecosystem.elcm.service.extraction.ReviewAccessService;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionResults;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionService;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionStatus;
@@ -40,6 +42,7 @@ public class ExtractionController {
 
     private final ExtractionService extractionService;
     private final CallerIdentityResolver callerIdentityResolver;
+    private final ReviewAccessService reviewAccessService;
 
     /** Progress: state, queue position, per-document status and elapsed time. */
     @GetMapping
@@ -69,6 +72,13 @@ public class ExtractionController {
         return extractionService.coverage(id);
     }
 
+    /** What the caller may do in the review of this package: has the permission, may edit (not the submitter). */
+    @GetMapping("/review-access")
+    @RequiresPermission(ElcmPermission.PIPELINE_VIEW)
+    public ReviewAccess reviewAccess(@PathVariable final Long id, final HttpServletRequest httpRequest) {
+        return reviewAccessService.access(id, httpRequest);
+    }
+
     /** Puts a FAILED extraction back in the queue: 204; 404 no submission, 409 not failed. */
     @PostMapping("/retry")
     @RequiresPermission(ElcmPermission.PIPELINE_SUBMIT)
@@ -95,12 +105,12 @@ public class ExtractionController {
             callerIdentityResolver.loginIdOf(httpRequest)));
     }
 
-    /** Reviewer: complete the review. 204; 409 not reviewable, 422 critical or flagged fields unconfirmed. */
+    /** Reviewer: complete the review. 204; 403 the caller submitted the package, 409 not reviewable, 422 critical or flagged fields unconfirmed. */
     @PostMapping("/complete")
     @RequiresPermission(ElcmPermission.PIPELINE_REVIEW)
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void complete(@PathVariable final Long id) {
-        extractionService.completeReview(id);
+    public void complete(@PathVariable final Long id, final HttpServletRequest httpRequest) {
+        extractionService.completeReview(id, callerIdentityResolver.loginIdOf(httpRequest));
     }
 
     /** Reviewer: reopen a completed review. 204; 404 no submission, 409 not in the Reviewed state. */

@@ -80,6 +80,7 @@ public class ReviewStore {
     private final LkpStagedDocumentStatusRepository lkpStagedDocumentStatusRepository;
     private final LkpExtractionJobStatusRepository lkpJobStatusRepository;
     private final ExtractionFieldRevisionRepository revisionRepository;
+    private final ReviewerSeparation reviewerSeparation;
 
     /**
      * Saves one field: the corrected value (blank clears it) and whether the reviewer confirms it.
@@ -89,6 +90,7 @@ public class ReviewStore {
     public void saveField(final Long packageId, final Long resultId, final String correctedValue,
                           final boolean verified, final String caller) {
         final Submission submission = reviewableSubmission(packageId);
+        reviewerSeparation.check(submission, caller);
         final ExtractionFieldResult result = resultRepository.findById(resultId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Field not found"));
         if (!latestJobIds(packageId).contains(result.getJob().getId())) {
@@ -119,7 +121,7 @@ public class ReviewStore {
      */
     @Transactional
     public int confirmVerified(final Long packageId, final String caller) {
-        reviewableSubmission(packageId);
+        reviewerSeparation.check(reviewableSubmission(packageId), caller);
         int changed = 0;
         for (final ExtractionFieldResult r : allResults(packageId)) {
             final String status = r.getFieldStatus();
@@ -137,8 +139,9 @@ public class ReviewStore {
 
     /** Completes the review: 422 while any critical or flagged field is unconfirmed. */
     @Transactional
-    public void complete(final Long packageId) {
+    public void complete(final Long packageId, final String caller) {
         final Submission submission = reviewableSubmission(packageId);
+        reviewerSeparation.check(submission, caller);
         int open = 0;
         for (final ExtractionFieldResult r : allResults(packageId)) {
             final boolean mustConfirm = Boolean.TRUE.equals(r.getTemplateField().getIsCritical())

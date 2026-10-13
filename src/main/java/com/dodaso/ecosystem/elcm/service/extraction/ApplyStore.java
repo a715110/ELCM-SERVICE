@@ -39,6 +39,7 @@ import org.springframework.web.server.ResponseStatusException;
  * Rules (status codes the REST layer returns):
  *   404 the package has no submission.
  *   409 the newest submission is not REVIEWED (not reviewed yet, declined, or already APPLIED).
+ *   403 the caller submitted the package (two-person rule, see ReviewerSeparation).
  *   422 the package has no target contract record and none was chosen (targetRecordId), or the
  *       chosen record is not in the package's workspace or is not ACTIVE or PENDING. Nothing is
  *       created. A package that has a target ignores targetRecordId.
@@ -75,6 +76,7 @@ public class ApplyStore {
     private final ContractRecordRepository contractRecordRepository;
     private final ContractPackageRepository contractPackageRepository;
     private final LkpPackageStatusRepository lkpPackageStatusRepository;
+    private final ReviewerSeparation reviewerSeparation;
 
     /** The records a reviewer can choose when the package has no target: same workspace, active or pending. */
     @Transactional(readOnly = true)
@@ -101,6 +103,7 @@ public class ApplyStore {
                 ? "The reviewed values were already applied"
                 : "Only a package whose review is completed can be applied");
         }
+        reviewerSeparation.check(submission, caller);
         final var chosenFor = submission.getContractPackage();
         ContractRecord target = chosenFor.getTargetRecord();
         if (target == null) {

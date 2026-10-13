@@ -80,8 +80,8 @@ public class ExtractionService {
     }
 
     /** Reviewer: complete the review (422 while critical or flagged fields are unconfirmed). */
-    public void completeReview(final Long packageId) {
-        reviewStore.complete(packageId);
+    public void completeReview(final Long packageId, final String caller) {
+        reviewStore.complete(packageId, caller);
     }
 
     /** What the reviewer did to one field, oldest first. */
