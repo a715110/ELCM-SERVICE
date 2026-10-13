@@ -6,6 +6,7 @@ import com.dodaso.ecosystem.elcm.security.RequiresPermission;
 import com.dodaso.ecosystem.elcm.service.extraction.ApplyRequest;
 import com.dodaso.ecosystem.elcm.service.extraction.ApplyResult;
 import com.dodaso.ecosystem.elcm.service.extraction.TargetCandidate;
+import com.dodaso.ecosystem.elcm.service.extraction.ExtractionCoverage;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionResults;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionService;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionStatus;
@@ -59,6 +60,13 @@ public class ExtractionController {
     @RequiresPermission(ElcmPermission.PIPELINE_VIEW)
     public FieldHistory history(@PathVariable final Long id, @PathVariable final Long resultId) {
         return extractionService.history(id, resultId);
+    }
+
+    /** Documents that cannot be read because their contract type has no extraction template. */
+    @GetMapping("/coverage")
+    @RequiresPermission(ElcmPermission.PIPELINE_VIEW)
+    public ExtractionCoverage coverage(@PathVariable final Long id) {
+        return extractionService.coverage(id);
     }
 
     /** Puts a FAILED extraction back in the queue: 204; 404 no submission, 409 not failed. */

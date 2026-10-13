@@ -49,6 +49,20 @@ public class ExtractionService {
             .map(d -> d.withFileName(nameOf(names, d.fileUploadId()))).toList());
     }
 
+    /** Names of the package's documents that cannot be read because their contract type has no template. */
+    public ExtractionCoverage coverage(final Long packageId) {
+        final List<Long> fileIds = readService.documentsWithoutTemplate(packageId);
+        if (fileIds.isEmpty()) {
+            return new ExtractionCoverage(List.of());
+        }
+        final Map<Long, FileUploadDTO> names = fileUploadLookupService.findByIds(idsOf(fileIds));
+        final List<String> files = new java.util.ArrayList<>();
+        for (final Long fileId : fileIds) {
+            files.add(nameOf(names, fileId));
+        }
+        return new ExtractionCoverage(files);
+    }
+
     /** Failed extraction back to the queue; only the failed documents run again. */
     public void retry(final Long packageId) {
         store.requeueFailed(packageId);

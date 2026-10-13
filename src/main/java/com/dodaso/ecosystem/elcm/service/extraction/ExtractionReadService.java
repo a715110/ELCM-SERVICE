@@ -4,9 +4,11 @@ import com.dodaso.ecosystem.elcm.entity.extraction.ExtractionFieldResult;
 import com.dodaso.ecosystem.elcm.entity.extraction.ExtractionJob;
 import com.dodaso.ecosystem.elcm.entity.extraction.ExtractionTemplateField;
 import com.dodaso.ecosystem.elcm.entity.pipeline.PackageDocument;
+import com.dodaso.ecosystem.elcm.entity.pipeline.StagedDocument;
 import com.dodaso.ecosystem.elcm.entity.pipeline.Submission;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionFieldResultRepository;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionJobRepository;
+import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionTemplateRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.ContractPackageRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.PackageDocumentRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.SubmissionRepository;
@@ -40,6 +42,31 @@ public class ExtractionReadService {
     private final SubmissionRepository submissionRepository;
     private final ExtractionJobRepository jobRepository;
     private final ExtractionFieldResultRepository resultRepository;
+    private final ExtractionTemplateRepository templateRepository;
+
+    /** Job status shown for a document that is not read because it has no extraction template. */
+    public static final String JOB_SKIPPED = "SKIPPED";
+    static final String NO_TEMPLATE_MESSAGE = "No extraction template for this document's contract type.";
+
+    /** Same rule as ExtractionStore.prepareJobs: an active template with an extractor id. */
+    private boolean hasTemplate(final StagedDocument doc) {
+        return templateRepository.findFirstByContractType_IdAndIsActiveTrueOrderByIdDesc(doc.getContractType().getId())
+            .filter(t -> t.getExtractorTemplateId() != null && !t.getExtractorTemplateId().isBlank())
+            .isPresent();
+    }
+
+    /** File upload ids of the package's documents that cannot be read for lack of a template. */
+    @Transactional(readOnly = true)
+    public List<Long> documentsWithoutTemplate(final Long packageId) {
+        requirePackage(packageId);
+        final List<Long> ids = new ArrayList<>();
+        for (final PackageDocument link : packageDocumentRepository.findDetailedByPackageId(packageId)) {
+            if (!hasTemplate(link.getStagedDocument())) {
+                ids.add(link.getStagedDocument().getFileUploadId());
+            }
+        }
+        return ids;
+    }
 
     @Transactional(readOnly = true)
     public ExtractionStatus status(final Long packageId) {
@@ -58,10 +85,18 @@ public class ExtractionReadService {
         final List<ExtractionStatus.DocumentProgress> rows = new ArrayList<>();
         int done = 0;
         int failed = 0;
+        int skipped = 0;
         int needsReview = 0;
         for (final PackageDocument link : links) {
             final Long docId = link.getStagedDocument().getId();
             final ExtractionJob job = jobs.get(docId);
+            if (job == null && !hasTemplate(link.getStagedDocument())) {
+                // Never gets a job: shown as skipped instead of queued for ever, and left out of the total.
+                skipped++;
+                rows.add(new ExtractionStatus.DocumentProgress(docId, link.getStagedDocument().getFileUploadId(), null,
+                    JOB_SKIPPED, 0, null, null, null, NO_TEMPLATE_MESSAGE));
+                continue;
+            }
             final String jobStatus = job == null ? ExtractionStore.JOB_QUEUED : job.getStatus().getCode();
             Integer elapsed = null;
             if (job != null && ExtractionStore.JOB_RUNNING.equals(jobStatus) && job.getStartedAt() != null) {
@@ -93,12 +128,14 @@ public class ExtractionReadService {
             }
             case ExtractionStore.SUBMISSION_PROCESSING -> {
                 state = "RUNNING";
-                message = "Reading document " + Math.min(links.size(), done + failed + 1) + " of " + links.size() + ".";
+                final int readable = links.size() - skipped;
+                message = "Reading document " + Math.min(readable, done + failed + 1) + " of " + readable + ".";
             }
             case ExtractionStore.SUBMISSION_EXTRACTED -> {
                 state = "DONE";
-                message = needsReview == 0 ? "Done. Nothing needs review."
-                    : "Done. " + needsReview + " field(s) need review.";
+                message = (needsReview == 0 ? "Done. Nothing needs review."
+                    : "Done. " + needsReview + " field(s) need review.")
+                    + (skipped == 0 ? "" : " " + skipped + " document(s) were not read: no extraction template.");
             }
             case ReviewStore.SUBMISSION_DECLINED -> {
                 state = "DECLINED";
@@ -124,7 +161,7 @@ public class ExtractionReadService {
             }
         }
         return new ExtractionStatus(packageId, submission.getId(), state, message, position,
-            links.size(), done, failed, needsReview, rows);
+            links.size() - skipped, done, failed, needsReview, rows);
     }
 
     @Transactional(readOnly = true)
