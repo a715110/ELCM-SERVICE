@@ -95,6 +95,14 @@ public class ExtractionController {
         extractionService.completeReview(id);
     }
 
+    /** Reviewer: reopen a completed review. 204; 404 no submission, 409 not in the Reviewed state. */
+    @PostMapping("/reopen")
+    @RequiresPermission(ElcmPermission.PIPELINE_REVIEW)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void reopen(@PathVariable final Long id, final HttpServletRequest httpRequest) {
+        extractionService.reopenReview(id, callerIdentityResolver.loginIdOf(httpRequest));
+    }
+
     /**
      * Reviewer: write the reviewed values to the package's target contract record. 200 with the
      * counts; 404 no submission, 409 not reviewed or already applied, 422 no target record

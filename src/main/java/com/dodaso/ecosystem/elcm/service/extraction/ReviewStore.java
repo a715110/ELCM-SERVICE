@@ -162,6 +162,31 @@ public class ReviewStore {
     }
 
     /**
+     * Reopens a completed review (ADDED 2026-10-12): the newest submission goes from REVIEWED back
+     * to EXTRACTED, so the reviewer can change values again, complete the review again or decline.
+     * Values, confirmations and history are kept. Who and when are recorded on the submission.
+     * 404 no submission; 409 the submission is not REVIEWED (not completed yet, or already applied
+     * or declined).
+     */
+    @Transactional
+    public void reopen(final Long packageId, final String caller) {
+        final Submission submission = submissionRepository.findByContractPackage_Id(packageId).stream()
+            .max(Comparator.comparing(Submission::getId))
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "The package has no submission"));
+        if (!SUBMISSION_REVIEWED.equals(submission.getStatus().getCode())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Only a package whose review is completed and not yet applied can be reopened");
+        }
+        final int moved = submissionRepository.reopen(submission.getId(), submission.getStatus(),
+            lkpSubmissionStatusRepository.findByCode(ExtractionStore.SUBMISSION_EXTRACTED)
+                .orElseThrow(() -> seedMissing("lkp_submission_status", ExtractionStore.SUBMISSION_EXTRACTED)),
+            caller, now());
+        if (moved != 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "The review was changed by someone else");
+        }
+    }
+
+    /**
      * Declines the package back to Assembly (ADDED 2026-10-12). Allowed while the newest submission
      * is EXTRACTED or FAILED. The reason is required (400 when blank or over 1000 characters). Then,
      * in one transaction: the submission becomes DECLINED with reason, who and when (kept as

@@ -85,6 +85,11 @@ public class ExtractionService {
         return applyStore.candidates(packageId);
     }
 
+    /** Reviewer: reopen a completed review so values can be changed again. */
+    public void reopenReview(final Long packageId, final String caller) {
+        reviewStore.reopen(packageId, caller);
+    }
+
     /** Reviewer: decline the package back to Assembly with a reason. */
     public void decline(final Long packageId, final String reason, final String caller) {
         reviewStore.decline(packageId, reason, caller);
