@@ -429,6 +429,8 @@ public class StageDocumentService {
         LocalDateTime uploadedAt) {
         final StagedDocument doc = new StagedDocument();
         doc.setFileUploadId(dto.getFileUploadId());
+        // ADDED 2026-10-14: SHA-256 of the file, used to warn about the same content twice.
+        doc.setContentHash(DuplicateCheckService.cleanHash(dto.getContentHash()));
         doc.setWorkspace(workspace);
         doc.setContractType(contractType);
         doc.setRoutingIntent(routingIntent);

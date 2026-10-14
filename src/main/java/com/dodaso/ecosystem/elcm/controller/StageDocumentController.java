@@ -17,6 +17,9 @@ import com.dodaso.ecosystem.elcm.security.CallerIdentityResolver;
 import com.dodaso.ecosystem.elcm.security.ElcmPermission;
 import com.dodaso.ecosystem.elcm.security.RequiresPermission;
 import com.dodaso.ecosystem.elcm.service.pipeline.DeleteStagedDocumentRequest;
+import com.dodaso.ecosystem.elcm.service.pipeline.DuplicateCheckRequest;
+import com.dodaso.ecosystem.elcm.service.pipeline.DuplicateCheckService;
+import com.dodaso.ecosystem.elcm.service.pipeline.DuplicateMatch;
 import com.dodaso.ecosystem.elcm.service.pipeline.StageDocumentService;
 import com.dodaso.ecosystem.elcm.service.pipeline.StagedDocumentRow;
 
@@ -34,6 +37,7 @@ public class StageDocumentController {
 
     private final StageDocumentService stageDocumentService;
     private final CallerIdentityResolver callerIdentityResolver;
+    private final DuplicateCheckService duplicateCheckService;
 
     @GetMapping
     @RequiresPermission(ElcmPermission.PIPELINE_VIEW)
@@ -58,6 +62,16 @@ public class StageDocumentController {
     public StagedDocumentDTOContainer createStagedDocuments(
             @RequestBody final StagedDocumentDTOContainer requestContainer) {
         return stageDocumentService.createStagedDocuments(requestContainer);
+    }
+
+    /**
+     * ADDED 2026-10-14 -- earlier uploads with the same content (SHA-256) in a workspace. Advisory
+     * only: the answer lists matches, nothing is blocked. One match per hash, newest first wins.
+     */
+    @PostMapping("/duplicates")
+    @RequiresPermission(ElcmPermission.PIPELINE_SUBMIT)
+    public List<DuplicateMatch> findDuplicates(@RequestBody final DuplicateCheckRequest request) {
+        return duplicateCheckService.find(request);
     }
 
     /**
