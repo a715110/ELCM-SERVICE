@@ -15,6 +15,7 @@ import com.dodaso.ecosystem.elcm.service.extraction.ExtractionStatus;
 import com.dodaso.ecosystem.elcm.service.extraction.FieldHistory;
 import com.dodaso.ecosystem.elcm.service.extraction.DeclineRequest;
 import com.dodaso.ecosystem.elcm.service.extraction.Resubmission;
+import com.dodaso.ecosystem.elcm.service.extraction.ReprocessRequest;
 import com.dodaso.ecosystem.elcm.service.extraction.SaveFieldRequest;
 import com.dodaso.ecosystem.elcm.service.extraction.SendBackEntry;
 import com.dodaso.ecosystem.elcm.service.extraction.SendBackRequest;
@@ -115,7 +116,21 @@ public class ExtractionController {
   public void saveField(@PathVariable final Long id, @PathVariable final Long resultId,
       @RequestBody final SaveFieldRequest request, final HttpServletRequest httpRequest) {
     extractionService.saveField(id, resultId, request.correctedValue(),
-        Boolean.TRUE.equals(request.verified()), callerIdentityResolver.loginIdOf(httpRequest));
+        Boolean.TRUE.equals(request.verified()), request.reason(),
+        callerIdentityResolver.loginIdOf(httpRequest));
+  }
+
+  /**
+   * Reviewer: have one document read again, with a reason. 204; 400 bad reason, 404 unknown
+   * document, 409 not reviewable.
+   */
+  @PostMapping("/documents/{stagedDocumentId}/reprocess")
+  @RequiresPermission(ElcmPermission.PIPELINE_REVIEW)
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void reprocess(@PathVariable final Long id, @PathVariable final Long stagedDocumentId,
+      @RequestBody final ReprocessRequest request, final HttpServletRequest httpRequest) {
+    extractionService.reprocess(id, stagedDocumentId, request.reason(),
+        callerIdentityResolver.loginIdOf(httpRequest));
   }
 
   /**

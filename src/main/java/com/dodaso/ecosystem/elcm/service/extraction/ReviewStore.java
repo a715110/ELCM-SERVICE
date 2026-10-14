@@ -3,6 +3,7 @@ package com.dodaso.ecosystem.elcm.service.extraction;
 import com.dodaso.ecosystem.elcm.entity.extraction.ExtractionFieldResult;
 import com.dodaso.ecosystem.elcm.entity.extraction.ExtractionFieldRevision;
 import com.dodaso.ecosystem.elcm.entity.extraction.ExtractionJob;
+import com.dodaso.ecosystem.elcm.entity.extraction.ExtractionReprocess;
 import com.dodaso.ecosystem.elcm.entity.pipeline.ContractPackage;
 import com.dodaso.ecosystem.elcm.entity.pipeline.PackageDocument;
 import com.dodaso.ecosystem.elcm.entity.pipeline.Submission;
@@ -10,6 +11,7 @@ import com.dodaso.ecosystem.elcm.entity.pipeline.SubmissionSendBack;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionFieldResultRepository;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionFieldRevisionRepository;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionJobRepository;
+import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionReprocessRepository;
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpExtractionJobStatusRepository;
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpPackageStatusRepository;
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpStagedDocumentStatusRepository;
@@ -59,6 +61,11 @@ public class ReviewStore {
   public static final String SUBMISSION_DECLINED = "DECLINED";
   public static final int MAX_REASON_LENGTH = 1000;
 
+  /** A changed value or a re-process needs a reason of at least this many characters. */
+  public static final int MIN_CHANGE_REASON = 10;
+
+  public static final int MAX_CHANGE_REASON = 500;
+
   private static final String ACTION_CORRECTED = "CORRECTED";
   private static final String ACTION_CONFIRMED = "CONFIRMED";
   private static final String ACTION_UNCONFIRMED = "UNCONFIRMED";
@@ -72,6 +79,7 @@ public class ReviewStore {
   private static final String STAGED_DEFAULT = "UPLOADING";
 
   private final SubmissionRepository submissionRepository;
+  private final ExtractionReprocessRepository reprocessRepository;
   private final SubmissionSendBackRepository sendBackRepository;
   private final LkpSubmissionStatusRepository lkpSubmissionStatusRepository;
   private final PackageDocumentRepository packageDocumentRepository;
@@ -91,7 +99,7 @@ public class ReviewStore {
    */
   @Transactional
   public void saveField(final Long packageId, final Long resultId, final String correctedValue,
-      final boolean verified, final String caller) {
+      final boolean verified, final String reason, final String caller) {
     final Submission submission = reviewableSubmission(packageId);
     reviewerSeparation.check(submission, caller);
     final ExtractionFieldResult result = resultRepository.findById(resultId)
@@ -107,6 +115,8 @@ public class ReviewStore {
     }
     final String beforeEffective = effective(result);
     final boolean valueChanged = !java.util.Objects.equals(result.getCorrectedValue(), value);
+    // CHANGED 2026-10-14: changing a value needs a reason, kept with the revision.
+    final String changeReason = valueChanged ? requireChangeReason(reason, "change a value") : null;
     final boolean wasVerified = Boolean.TRUE.equals(result.getVerifiedFlag());
     result.setCorrectedValue(value);
     applyVerified(result, verified, caller);
@@ -114,7 +124,7 @@ public class ReviewStore {
     if (valueChanged || wasVerified != verified) {
       final String action =
           valueChanged ? ACTION_CORRECTED : (verified ? ACTION_CONFIRMED : ACTION_UNCONFIRMED);
-      record(result, beforeEffective, action, caller);
+      record(result, beforeEffective, action, caller, changeReason);
     }
     submissionRepository.touch(submission.getId(), now());
   }
@@ -134,7 +144,7 @@ public class ReviewStore {
           && !Boolean.TRUE.equals(r.getVerifiedFlag())) {
         applyVerified(r, true, caller);
         resultRepository.save(r);
-        record(r, effective(r), ACTION_CONFIRM_ALL, caller);
+        record(r, effective(r), ACTION_CONFIRM_ALL, caller, null);
         changed++;
       }
     }
@@ -398,7 +408,7 @@ public class ReviewStore {
    * from the result.
    */
   private void record(final ExtractionFieldResult r, final String previous, final String action,
-      final String caller) {
+      final String caller, final String reason) {
     final ExtractionFieldRevision rev = new ExtractionFieldRevision();
     rev.setFieldResult(r);
     rev.setRevisionNo(revisionRepository.maxRevisionNo(r.getId()) + 1);
@@ -408,7 +418,81 @@ public class ReviewStore {
     rev.setAction(action);
     rev.setChangedBy(caller);
     rev.setChangedAt(now());
+    rev.setReason(reason);
     revisionRepository.save(rev);
+  }
+
+  /** The trimmed reason; 400 when it is missing, too short or too long. */
+  private static String requireChangeReason(final String reason, final String what) {
+    final String text = ReviewRules.normalize(reason);
+    if (text == null || text.length() < MIN_CHANGE_REASON) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+          "A reason of at least " + MIN_CHANGE_REASON + " characters is needed to " + what + ".");
+    }
+    if (text.length() > MAX_CHANGE_REASON) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+          "The reason is longer than " + MAX_CHANGE_REASON + " characters.");
+    }
+    return text;
+  }
+
+  /**
+   * Has one document read again (ADDED 2026-10-14). While the review is open (the submission is
+   * EXTRACTED), the document's current extraction job is set aside (SUPERSEDED, its results stay as
+   * history), the reason is recorded, and the submission goes back to PENDING so the worker reads
+   * only that document again (the other documents keep their extractions, corrections and
+   * confirmations). Corrections and confirmations on the re-read document are lost: the new result
+   * starts unconfirmed. 400 reason missing, under 10 or over 500 characters; 403 the caller
+   * submitted the package; 404 no submission or the document is not in the package; 409 the review
+   * is not open, the document has no finished extraction, or someone changed the submission first.
+   */
+  @Transactional
+  public void reprocess(final Long packageId, final Long stagedDocumentId, final String reason,
+      final String caller) {
+    final Submission submission = reviewableSubmission(packageId);
+    reviewerSeparation.check(submission, caller);
+    final String text = requireChangeReason(reason, "have a document read again");
+    boolean inPackage = false;
+    for (final PackageDocument link : packageDocumentRepository.findDetailedByPackageId(packageId)) {
+      if (link.getStagedDocument().getId().equals(stagedDocumentId)) {
+        inPackage = true;
+        break;
+      }
+    }
+    if (!inPackage) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Document is not in this package");
+    }
+    ExtractionJob current = null;
+    for (final ExtractionJob job : latestJobs(packageId)) {
+      if (job.getStagedDocument().getId().equals(stagedDocumentId)) {
+        current = job;
+      }
+    }
+    if (current == null) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT,
+          "The document has no finished extraction to read again");
+    }
+    final int moved = submissionRepository.moveStatus(submission.getId(), submission.getStatus(),
+        lkpSubmissionStatusRepository.findByCode(ExtractionStore.SUBMISSION_PENDING)
+            .orElseThrow(
+                () -> seedMissing("lkp_submission_status", ExtractionStore.SUBMISSION_PENDING)),
+        now());
+    if (moved != 1) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT,
+          "The review was changed by someone else");
+    }
+    current.setStatus(lkpJobStatusRepository.findByCode(ExtractionStore.JOB_SUPERSEDED)
+        .orElseThrow(
+            () -> seedMissing("lkp_extraction_job_status", ExtractionStore.JOB_SUPERSEDED)));
+    jobRepository.save(current);
+    final ExtractionReprocess row = new ExtractionReprocess();
+    row.setSubmission(submission);
+    row.setStagedDocument(current.getStagedDocument());
+    row.setPreviousJobId(current.getId());
+    row.setReason(text);
+    row.setRequestedBy(caller != null && !caller.isBlank() ? caller : "system");
+    row.setRequestedAt(now());
+    reprocessRepository.save(row);
   }
 
   private static void applyVerified(final ExtractionFieldResult r, final boolean verified,

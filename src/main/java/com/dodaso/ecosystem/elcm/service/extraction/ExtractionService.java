@@ -70,8 +70,14 @@ public class ExtractionService {
 
     /** Reviewer: correct and/or confirm one field. */
     public void saveField(final Long packageId, final Long resultId, final String correctedValue,
-                          final boolean verified, final String caller) {
-        reviewStore.saveField(packageId, resultId, correctedValue, verified, caller);
+                          final boolean verified, final String reason, final String caller) {
+        reviewStore.saveField(packageId, resultId, correctedValue, verified, reason, caller);
+    }
+
+    /** Reviewer: send one document back to be read again, with a reason. */
+    public void reprocess(final Long packageId, final Long stagedDocumentId, final String reason,
+                          final String caller) {
+        reviewStore.reprocess(packageId, stagedDocumentId, reason, caller);
     }
 
     /** Reviewer: confirm every field the extractor verified. Returns how many were confirmed. */
