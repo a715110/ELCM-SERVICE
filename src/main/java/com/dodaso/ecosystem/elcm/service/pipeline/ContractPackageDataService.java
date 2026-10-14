@@ -59,6 +59,7 @@ public class ContractPackageDataService {
     static final String UNDEFINED_ROLE_CODE = "UNDEFINED";
     static final String ASSEMBLY_STATUS_CODE = "ASSEMBLY";
     static final String VALIDATED_STATUS_CODE = "VALIDATED";
+    static final String COMPLETED_STATUS_CODE = "COMPLETED";
     static final String SUBMISSION_PENDING_CODE = "PENDING";
     private static final String STAGED_SUBMITTED_CODE = "SUBMITTED";
     /** The status every document starts in (StageDocumentService); Unsubmit puts documents back to it. */
@@ -190,8 +191,9 @@ public class ContractPackageDataService {
     /**
      * Submit for extraction (decided 2026-10-08). The package moves ASSEMBLY to VALIDATED, a
      * submission row is created as PENDING, and every document becomes SUBMITTED. Ready means: at
-     * least one document, an assignee, and a role on every document (none left as UNDEFINED); the
-     * target record is not required. 404 unknown package, 409 not a draft, 400 not ready.
+     * least one document and an assignee. A document may still be UNDEFINED (changed 2026-10-14):
+     * the role is set later with setDocumentRole, and Complete review requires every role to be set.
+     * The target record is not required. 404 unknown package, 409 not a draft, 400 not ready.
      * Nothing else changes while the package is VALIDATED: reassign, add and remove all answer 409.
      */
     @Transactional
@@ -203,11 +205,6 @@ public class ContractPackageDataService {
         }
         if (blankToNull(pkg.getAssigneeId()) == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The package has no assignee");
-        }
-        for (final PackageDocument link : links) {
-            if (UNDEFINED_ROLE_CODE.equals(link.getDocumentRole().getCode())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Every document needs a role");
-            }
         }
         final LkpPackageStatus validated = lkpPackageStatusRepository.findByCode(VALIDATED_STATUS_CODE)
             .orElseThrow(() -> seedMissing("lkp_package_status", VALIDATED_STATUS_CODE));
@@ -264,6 +261,29 @@ public class ContractPackageDataService {
         }
         pkg.setStatus(assembly);
         contractPackageRepository.save(pkg);
+    }
+
+    /**
+     * Sets the role of one document in a package (ADDED 2026-10-14); a blank code sets it back to
+     * UNDEFINED. Allowed while the package is a draft or submitted, not after it is completed
+     * (applied). 404 unknown package or a document that is not in it; 400 unknown role; 409 the
+     * package is completed.
+     */
+    @Transactional
+    public void setDocumentRole(final Long packageId, final Long stagedDocumentId, final String roleCode) {
+        final ContractPackage pkg = contractPackageRepository.findById(packageId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Package not found"));
+        if (COMPLETED_STATUS_CODE.equals(pkg.getStatus().getCode())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "The package is completed");
+        }
+        final PackageDocument link = packageDocumentRepository
+            .findByContractPackage_IdAndStagedDocument_Id(packageId, stagedDocumentId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document is not in this package"));
+        final String code = roleCode == null || roleCode.isBlank() ? UNDEFINED_ROLE_CODE : roleCode.trim();
+        final LkpDocumentRole role = lkpDocumentRoleRepository.findByCode(code)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown document role: " + code));
+        link.setDocumentRole(role);
+        packageDocumentRepository.save(link);
     }
 
     private static ResponseStatusException seedMissing(final String table, final String code) {

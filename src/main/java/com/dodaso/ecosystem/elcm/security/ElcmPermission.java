@@ -34,7 +34,14 @@ public enum ElcmPermission {
    * reviewer. Held by the Approver role, not by reviewers or submitters (separation of duties:
    * whoever submitted or reviewed a package cannot approve it).
    */
-  PIPELINE_APPROVE("pipeline:approve");
+  PIPELINE_APPROVE("pipeline:approve"),
+
+  /**
+   * Set or change the role of a document in a package (lease, amendment, schedule and so on),
+   * before submit or while the package is being reviewed. Held by the submitting roles and by
+   * reviewers, not by approvers.
+   */
+  PIPELINE_CLASSIFY("pipeline:classify");
 
   private final String code;
 

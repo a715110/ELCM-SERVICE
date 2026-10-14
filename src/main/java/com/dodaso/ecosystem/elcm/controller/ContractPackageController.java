@@ -11,6 +11,7 @@ import com.dodaso.ecosystem.elcm.service.pipeline.CreateContractPackageRequest;
 import com.dodaso.ecosystem.elcm.service.pipeline.DocumentRoleOptionRow;
 import com.dodaso.ecosystem.elcm.service.pipeline.PackageDocumentRow;
 import com.dodaso.ecosystem.elcm.service.pipeline.ReassignPackageRequest;
+import com.dodaso.ecosystem.elcm.service.pipeline.SetDocumentRoleRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -83,6 +84,18 @@ public class ContractPackageController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void reassign(@PathVariable final Long id, @RequestBody final ReassignPackageRequest request) {
         contractPackageService.reassign(id, request);
+    }
+
+    /**
+     * Sets the role of one document (ADDED 2026-10-14), before submit or during review. 204; 400
+     * unknown role; 404 unknown package or document; 409 the package is completed.
+     */
+    @PostMapping("/{id}/documents/{stagedDocumentId}/role")
+    @RequiresPermission(ElcmPermission.PIPELINE_CLASSIFY)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void setDocumentRole(@PathVariable final Long id, @PathVariable final Long stagedDocumentId,
+                                @RequestBody final SetDocumentRoleRequest request) {
+        contractPackageService.setDocumentRole(id, stagedDocumentId, request);
     }
 
     /** Submit for extraction: 204; 400 not ready, 404 unknown, 409 not a draft. */

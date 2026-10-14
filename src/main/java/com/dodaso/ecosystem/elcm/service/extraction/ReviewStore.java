@@ -142,7 +142,8 @@ public class ReviewStore {
   }
 
   /**
-   * Completes the review: 422 while any critical or flagged field is unconfirmed.
+   * Completes the review: 422 while any critical or flagged field is unconfirmed; 400 while any
+   * document has no role yet (roles are optional at submit, ADDED 2026-10-14).
    */
   @Transactional
   public void complete(final Long packageId, final String caller) {
@@ -160,6 +161,15 @@ public class ReviewStore {
       throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
           open
               + " field(s) still need to be confirmed (critical fields and fields marked Review).");
+    }
+    // ADDED 2026-10-14: roles are optional at submit, so they must be set by the end of review.
+    final long undefinedRoles =
+        packageDocumentRepository.countByContractPackage_Id(packageId)
+            - packageDocumentRepository.countByContractPackage_IdAndDocumentRole_CodeNot(
+                packageId, "UNDEFINED");
+    if (undefinedRoles > 0) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+          undefinedRoles + " document(s) still need a role.");
     }
     final int moved = submissionRepository.complete(submission.getId(), submission.getStatus(),
         lkpSubmissionStatusRepository.findByCode(SUBMISSION_REVIEWED)

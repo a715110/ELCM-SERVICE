@@ -25,7 +25,8 @@ public final class ElcmRolePermissions {
         EnumSet.of(
             ElcmPermission.PIPELINE_VIEW,
             ElcmPermission.PIPELINE_SUBMIT,
-            ElcmPermission.PIPELINE_DELETE);
+            ElcmPermission.PIPELINE_DELETE,
+            ElcmPermission.PIPELINE_CLASSIFY);
 
     put("Super Admin", all);
     put("System Admin", all);
@@ -33,7 +34,12 @@ public final class ElcmRolePermissions {
     put("Business Submitter", viewSubmitAndDelete);
     put("Preparer", viewSubmitAndDelete);
     // Reviewers confirm extracted values. Submitting roles deliberately do not get this.
-    put("Reviewer", EnumSet.of(ElcmPermission.PIPELINE_VIEW, ElcmPermission.PIPELINE_REVIEW));
+    put(
+        "Reviewer",
+        EnumSet.of(
+            ElcmPermission.PIPELINE_VIEW,
+            ElcmPermission.PIPELINE_REVIEW,
+            ElcmPermission.PIPELINE_CLASSIFY));
     // Approvers approve and apply a completed review. They do not edit values.
     put("Approver", EnumSet.of(ElcmPermission.PIPELINE_VIEW, ElcmPermission.PIPELINE_APPROVE));
     put("Accountant", viewOnly);

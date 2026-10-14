@@ -107,6 +107,10 @@ public class ContractPackageService {
         dataService.unsubmit(packageId);
     }
 
+    public void setDocumentRole(final Long packageId, final Long stagedDocumentId, final SetDocumentRoleRequest request) {
+        dataService.setDocumentRole(packageId, stagedDocumentId, request != null ? request.roleCode() : null);
+    }
+
     public void reassign(final Long packageId, final ReassignPackageRequest request) {
         dataService.reassign(packageId, request != null ? request.getAssigneeId() : null);
     }
