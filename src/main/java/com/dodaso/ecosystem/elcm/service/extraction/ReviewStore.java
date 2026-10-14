@@ -238,6 +238,32 @@ public class ReviewStore {
     return entries;
   }
 
+  /**
+   * The correction note of the newest submission together with the decline it answers (ADDED
+   * 2026-10-14). resubmitted is false when the package has only one submission. 404 no submission.
+   */
+  @Transactional(readOnly = true)
+  public Resubmission resubmission(final Long packageId) {
+    final List<Submission> all = new ArrayList<>(submissionRepository.findByContractPackage_Id(packageId));
+    if (all.isEmpty()) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "The package has no submission");
+    }
+    all.sort(Comparator.comparing(Submission::getId).reversed());
+    final Submission newest = all.get(0);
+    if (all.size() < 2) {
+      return new Resubmission(false, null, null, null, null, null, null);
+    }
+    final Submission previous = all.get(1);
+    return new Resubmission(
+        true,
+        newest.getCorrectionNote(),
+        newest.getSubmittedBy(),
+        newest.getSubmittedAt() == null ? null : newest.getSubmittedAt().toString(),
+        previous.getDeclineReason(),
+        previous.getDeclinedBy(),
+        previous.getDeclinedAt() == null ? null : previous.getDeclinedAt().toString());
+  }
+
   private Submission newestSubmission(final Long packageId) {
     return submissionRepository.findByContractPackage_Id(packageId).stream()
         .max(Comparator.comparing(Submission::getId))

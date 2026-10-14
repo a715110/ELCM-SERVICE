@@ -99,8 +99,8 @@ public class ContractPackageService {
         dataService.removeDocument(packageId, stagedDocumentId);
     }
 
-    public void submit(final Long packageId, final String callerLoginId) {
-        dataService.submit(packageId, callerLoginId);
+    public void submit(final Long packageId, final String callerLoginId, final SubmitRequest request) {
+        dataService.submit(packageId, callerLoginId, request != null ? request.correctionNote() : null);
     }
 
     public void unsubmit(final Long packageId) {

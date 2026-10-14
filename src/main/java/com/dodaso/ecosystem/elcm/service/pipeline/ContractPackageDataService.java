@@ -60,6 +60,7 @@ public class ContractPackageDataService {
     static final String ASSEMBLY_STATUS_CODE = "ASSEMBLY";
     static final String VALIDATED_STATUS_CODE = "VALIDATED";
     static final String COMPLETED_STATUS_CODE = "COMPLETED";
+    static final int MAX_NOTE_LENGTH = 1000;
     static final String SUBMISSION_PENDING_CODE = "PENDING";
     private static final String STAGED_SUBMITTED_CODE = "SUBMITTED";
     /** The status every document starts in (StageDocumentService); Unsubmit puts documents back to it. */
@@ -194,10 +195,11 @@ public class ContractPackageDataService {
      * least one document and an assignee. A document may still be UNDEFINED (changed 2026-10-14):
      * the role is set later with setDocumentRole, and Complete review requires every role to be set.
      * The target record is not required. 404 unknown package, 409 not a draft, 400 not ready.
-     * Nothing else changes while the package is VALIDATED: reassign, add and remove all answer 409.
+     * A package submitted before (its earlier submission was declined) needs a correction note, up to
+     * 1000 characters, kept on the new submission (400 otherwise). Nothing else changes while the package is VALIDATED: reassign, add and remove all answer 409.
      */
     @Transactional
-    public void submit(final Long packageId, final String callerLoginId) {
+    public void submit(final Long packageId, final String callerLoginId, final String correctionNote) {
         final ContractPackage pkg = loadDraftPackage(packageId);
         final List<PackageDocument> links = packageDocumentRepository.findDetailedByPackageId(packageId);
         if (links.isEmpty()) {
@@ -205,6 +207,18 @@ public class ContractPackageDataService {
         }
         if (blankToNull(pkg.getAssigneeId()) == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The package has no assignee");
+        }
+        // A package that was submitted before has a declined submission on record: this is a
+        // resubmission and needs a note on what was corrected (ADDED 2026-10-14).
+        final String note = blankToNull(correctionNote);
+        if (!submissionRepository.findByContractPackage_Id(packageId).isEmpty()) {
+            if (note == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A correction note is required");
+            }
+            if (note.length() > MAX_NOTE_LENGTH) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "The correction note is longer than " + MAX_NOTE_LENGTH + " characters");
+            }
         }
         final LkpPackageStatus validated = lkpPackageStatusRepository.findByCode(VALIDATED_STATUS_CODE)
             .orElseThrow(() -> seedMissing("lkp_package_status", VALIDATED_STATUS_CODE));
@@ -221,6 +235,7 @@ public class ContractPackageDataService {
         submission.setStatus(pending);
         submission.setSubmittedBy(callerLoginId != null && !callerLoginId.isBlank() ? callerLoginId : "system");
         submission.setSubmittedAt(LocalDateTime.now(ZoneOffset.UTC));
+        submission.setCorrectionNote(note);
         submissionRepository.save(submission);
 
         for (final PackageDocument link : links) {

@@ -12,6 +12,7 @@ import com.dodaso.ecosystem.elcm.service.pipeline.DocumentRoleOptionRow;
 import com.dodaso.ecosystem.elcm.service.pipeline.PackageDocumentRow;
 import com.dodaso.ecosystem.elcm.service.pipeline.ReassignPackageRequest;
 import com.dodaso.ecosystem.elcm.service.pipeline.SetDocumentRoleRequest;
+import com.dodaso.ecosystem.elcm.service.pipeline.SubmitRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -98,12 +99,17 @@ public class ContractPackageController {
         contractPackageService.setDocumentRole(id, stagedDocumentId, request);
     }
 
-    /** Submit for extraction: 204; 400 not ready, 404 unknown, 409 not a draft. */
+    /**
+     * Submit for extraction: 204; 400 not ready, or a resubmission without a correction note (body
+     * {"correctionNote": "..."}); 404 unknown, 409 not a draft.
+     */
     @PostMapping("/{id}/submit")
     @RequiresPermission(ElcmPermission.PIPELINE_SUBMIT)
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void submit(@PathVariable final Long id, final HttpServletRequest httpRequest) {
-        contractPackageService.submit(id, callerIdentityResolver.loginIdOf(httpRequest));
+    public void submit(@PathVariable final Long id,
+                       @RequestBody(required = false) final SubmitRequest request,
+                       final HttpServletRequest httpRequest) {
+        contractPackageService.submit(id, callerIdentityResolver.loginIdOf(httpRequest), request);
     }
 
     /** Unsubmit while the submission is still pending: 204; 404 unknown, 409 not submitted or picked up. */

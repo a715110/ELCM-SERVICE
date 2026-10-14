@@ -114,6 +114,11 @@ public class ExtractionService {
         return reviewStore.sendBacks(packageId);
     }
 
+    /** The correction note of a resubmission and the decline it answers. */
+    public Resubmission resubmission(final Long packageId) {
+        return reviewStore.resubmission(packageId);
+    }
+
     /** Reviewer: decline the package back to Assembly with a reason. */
     public void decline(final Long packageId, final String reason, final String caller) {
         reviewStore.decline(packageId, reason, caller);

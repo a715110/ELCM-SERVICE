@@ -14,6 +14,7 @@ import com.dodaso.ecosystem.elcm.service.extraction.ExtractionService;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionStatus;
 import com.dodaso.ecosystem.elcm.service.extraction.FieldHistory;
 import com.dodaso.ecosystem.elcm.service.extraction.DeclineRequest;
+import com.dodaso.ecosystem.elcm.service.extraction.Resubmission;
 import com.dodaso.ecosystem.elcm.service.extraction.SaveFieldRequest;
 import com.dodaso.ecosystem.elcm.service.extraction.SendBackEntry;
 import com.dodaso.ecosystem.elcm.service.extraction.SendBackRequest;
@@ -151,6 +152,16 @@ public class ExtractionController {
       final HttpServletRequest httpRequest) {
     extractionService.sendBack(id, request == null ? null : request.reason(),
         callerIdentityResolver.loginIdOf(httpRequest));
+  }
+
+  /**
+   * The submitter's correction note when the package was submitted again after a decline, with the
+   * decline it answers. resubmitted is false for a first submission. 404 no submission.
+   */
+  @GetMapping("/resubmission")
+  @RequiresPermission(ElcmPermission.PIPELINE_VIEW)
+  public Resubmission resubmission(@PathVariable final Long id) {
+    return extractionService.resubmission(id);
   }
 
   /** Why the review was sent back, newest first; empty when it never was. 404 no submission. */
