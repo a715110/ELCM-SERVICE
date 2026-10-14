@@ -21,7 +21,8 @@ public record ExtractorResult(
         String problem,
         String note,
         List<String> candidates,
-        Boolean required) {
+        Boolean required,
+        Integer page) {
     }
 
     public List<Field> fieldsOrEmpty() {

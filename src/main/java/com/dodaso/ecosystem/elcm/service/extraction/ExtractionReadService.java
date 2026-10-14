@@ -185,7 +185,7 @@ public class ExtractionReadService {
                         Boolean.TRUE.equals(f.getIsRequired()), r.getExtractedValue(), r.getCorrectedValue(),
                         r.getFieldStatus(), r.getQuote(), r.getProblem(), r.getNote(), r.getCandidates(),
                         Boolean.TRUE.equals(r.getNeedsReviewFlag()), Boolean.TRUE.equals(r.getVerifiedFlag()),
-                        r.getVerifiedBy()));
+                        r.getVerifiedBy(), r.getPageNo()));
                 }
             }
             docs.add(new ExtractionResults.DocumentResult(docId, link.getStagedDocument().getFileUploadId(), null,

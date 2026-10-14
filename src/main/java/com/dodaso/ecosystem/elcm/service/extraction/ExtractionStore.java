@@ -207,6 +207,7 @@ public class ExtractionStore {
             row.setExtractedValue(cut(valueText(field.value()), 2000));
             row.setFieldStatus(cut(field.status(), 30));
             row.setQuote(cut(field.quote(), 2000));
+            row.setPageNo(field.page() != null && field.page() > 0 ? field.page() : null);
             row.setProblem(cut(field.problem(), 500));
             row.setNote(cut(field.note(), 500));
             row.setCandidates(field.candidates() == null || field.candidates().isEmpty()

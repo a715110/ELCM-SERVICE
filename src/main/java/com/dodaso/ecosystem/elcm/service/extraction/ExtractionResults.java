@@ -35,6 +35,7 @@ public record ExtractionResults(Long packageId, List<DocumentResult> documents) 
         String candidates,
         boolean needsReview,
         boolean verified,
-        String verifiedBy) {
+        String verifiedBy,
+        Integer pageNo) {
     }
 }
