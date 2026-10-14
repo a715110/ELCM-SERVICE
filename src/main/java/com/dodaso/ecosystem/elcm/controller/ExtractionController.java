@@ -15,6 +15,8 @@ import com.dodaso.ecosystem.elcm.service.extraction.ExtractionStatus;
 import com.dodaso.ecosystem.elcm.service.extraction.FieldHistory;
 import com.dodaso.ecosystem.elcm.service.extraction.DeclineRequest;
 import com.dodaso.ecosystem.elcm.service.extraction.SaveFieldRequest;
+import com.dodaso.ecosystem.elcm.service.extraction.SendBackEntry;
+import com.dodaso.ecosystem.elcm.service.extraction.SendBackRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
@@ -138,14 +140,24 @@ public class ExtractionController {
   }
 
   /**
-   * Approver: send a completed review back to the reviewer (the review becomes editable again).
-   * 204; 404 no submission, 409 not in the Reviewed state.
+   * Approver: send a completed review back to the reviewer, with a reason (the review becomes
+   * editable again). Can happen any number of times; each reason is kept. 204; 400 reason missing
+   * or over 1000 characters; 404 no submission; 409 not in the Reviewed state.
    */
   @PostMapping("/send-back")
   @RequiresPermission(ElcmPermission.PIPELINE_APPROVE)
   @ResponseStatus(HttpStatus.NO_CONTENT)
-  public void sendBack(@PathVariable final Long id, final HttpServletRequest httpRequest) {
-    extractionService.reopenReview(id, callerIdentityResolver.loginIdOf(httpRequest));
+  public void sendBack(@PathVariable final Long id, @RequestBody final SendBackRequest request,
+      final HttpServletRequest httpRequest) {
+    extractionService.sendBack(id, request == null ? null : request.reason(),
+        callerIdentityResolver.loginIdOf(httpRequest));
+  }
+
+  /** Why the review was sent back, newest first; empty when it never was. 404 no submission. */
+  @GetMapping("/send-backs")
+  @RequiresPermission(ElcmPermission.PIPELINE_VIEW)
+  public List<SendBackEntry> sendBacks(@PathVariable final Long id) {
+    return extractionService.sendBacks(id);
   }
 
   /**

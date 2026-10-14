@@ -104,6 +104,16 @@ public class ExtractionService {
         reviewStore.reopen(packageId, caller);
     }
 
+    /** Approver: send a completed review back to the reviewer, with a reason. */
+    public void sendBack(final Long packageId, final String reason, final String caller) {
+        reviewStore.sendBack(packageId, reason, caller);
+    }
+
+    /** The reasons the package's review was sent back, newest first. */
+    public List<SendBackEntry> sendBacks(final Long packageId) {
+        return reviewStore.sendBacks(packageId);
+    }
+
     /** Reviewer: decline the package back to Assembly with a reason. */
     public void decline(final Long packageId, final String reason, final String caller) {
         reviewStore.decline(packageId, reason, caller);

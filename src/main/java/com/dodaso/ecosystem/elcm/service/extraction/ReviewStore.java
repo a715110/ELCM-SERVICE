@@ -6,6 +6,7 @@ import com.dodaso.ecosystem.elcm.entity.extraction.ExtractionJob;
 import com.dodaso.ecosystem.elcm.entity.pipeline.ContractPackage;
 import com.dodaso.ecosystem.elcm.entity.pipeline.PackageDocument;
 import com.dodaso.ecosystem.elcm.entity.pipeline.Submission;
+import com.dodaso.ecosystem.elcm.entity.pipeline.SubmissionSendBack;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionFieldResultRepository;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionFieldRevisionRepository;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionJobRepository;
@@ -17,6 +18,7 @@ import com.dodaso.ecosystem.elcm.repository.pipeline.ContractPackageRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.PackageDocumentRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.StagedDocumentRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.SubmissionRepository;
+import com.dodaso.ecosystem.elcm.repository.pipeline.SubmissionSendBackRepository;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -70,6 +72,7 @@ public class ReviewStore {
   private static final String STAGED_DEFAULT = "UPLOADING";
 
   private final SubmissionRepository submissionRepository;
+  private final SubmissionSendBackRepository sendBackRepository;
   private final LkpSubmissionStatusRepository lkpSubmissionStatusRepository;
   private final PackageDocumentRepository packageDocumentRepository;
   private final ExtractionJobRepository jobRepository;
@@ -177,19 +180,77 @@ public class ReviewStore {
    */
   @Transactional
   public void reopen(final Long packageId, final String caller) {
-    final Submission submission = submissionRepository.findByContractPackage_Id(packageId).stream()
+    reopenNewest(packageId, caller);
+  }
+
+  /**
+   * Approver sends a completed review back to the reviewer (ADDED 2026-10-14), with a reason. Same
+   * move as reopen (REVIEWED back to EXTRACTED), plus one row in submission_send_back, so the
+   * reviewer sees why and a package sent back several times keeps every reason. 404 no submission;
+   * 409 the submission is not REVIEWED; 400 the reason is blank or over 1000 characters (checked
+   * after the status, so a package that moved on answers 409 whatever was typed).
+   */
+  @Transactional
+  public void sendBack(final Long packageId, final String reason, final String caller) {
+    final Submission submission = newestSubmission(packageId);
+    if (!SUBMISSION_REVIEWED.equals(submission.getStatus().getCode())) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT,
+          "Only a package whose review is completed and not yet applied can be sent back");
+    }
+    final String text = ReviewRules.normalize(reason);
+    if (text == null) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A reason is required");
+    }
+    if (text.length() > MAX_REASON_LENGTH) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+          "The reason is longer than " + MAX_REASON_LENGTH + " characters");
+    }
+    final LocalDateTime now = now();
+    reopenSubmission(submission, caller, now);
+    final SubmissionSendBack row = new SubmissionSendBack();
+    row.setSubmission(submission);
+    row.setReason(text);
+    row.setSentBy(caller != null && !caller.isBlank() ? caller : "system");
+    row.setSentAt(now);
+    sendBackRepository.save(row);
+  }
+
+  /** The send-backs of the package's newest submission, newest first; empty when none. */
+  @Transactional(readOnly = true)
+  public List<SendBackEntry> sendBacks(final Long packageId) {
+    final Submission submission = newestSubmission(packageId);
+    final List<SendBackEntry> entries = new ArrayList<>();
+    for (final SubmissionSendBack r :
+        sendBackRepository.findBySubmission_IdOrderByIdDesc(submission.getId())) {
+      entries.add(new SendBackEntry(r.getId(), r.getReason(), r.getSentBy(),
+          r.getSentAt() == null ? null : r.getSentAt().toString()));
+    }
+    return entries;
+  }
+
+  private Submission newestSubmission(final Long packageId) {
+    return submissionRepository.findByContractPackage_Id(packageId).stream()
         .max(Comparator.comparing(Submission::getId))
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
             "The package has no submission"));
+  }
+
+  private void reopenNewest(final Long packageId, final String caller) {
+    final Submission submission = newestSubmission(packageId);
     if (!SUBMISSION_REVIEWED.equals(submission.getStatus().getCode())) {
       throw new ResponseStatusException(HttpStatus.CONFLICT,
           "Only a package whose review is completed and not yet applied can be reopened");
     }
+    reopenSubmission(submission, caller, now());
+  }
+
+  private void reopenSubmission(final Submission submission, final String caller,
+      final LocalDateTime now) {
     final int moved = submissionRepository.reopen(submission.getId(), submission.getStatus(),
         lkpSubmissionStatusRepository.findByCode(ExtractionStore.SUBMISSION_EXTRACTED)
             .orElseThrow(
                 () -> seedMissing("lkp_submission_status", ExtractionStore.SUBMISSION_EXTRACTED)),
-        caller, now());
+        caller, now);
     if (moved != 1) {
       throw new ResponseStatusException(HttpStatus.CONFLICT,
           "The review was changed by someone else");
