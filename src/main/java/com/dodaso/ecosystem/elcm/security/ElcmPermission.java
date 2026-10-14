@@ -7,13 +7,19 @@ package com.dodaso.ecosystem.elcm.security;
  */
 public enum ElcmPermission {
 
-  /** See staged documents and pipeline metrics. */
+  /**
+   * See staged documents and pipeline metrics.
+   */
   PIPELINE_VIEW("pipeline:view"),
 
-  /** Add documents to the pipeline (Upload Files, Add to Pipeline). */
+  /**
+   * Add documents to the pipeline (Upload Files, Add to Pipeline).
+   */
   PIPELINE_SUBMIT("pipeline:submit"),
 
-  /** Delete (soft delete) a staged document. Ownership is checked separately, in the service. */
+  /**
+   * Delete (soft delete) a staged document. Ownership is checked separately, in the service.
+   */
   PIPELINE_DELETE("pipeline:delete"),
 
   /**
@@ -21,7 +27,14 @@ public enum ElcmPermission {
    * pipeline:submit on purpose, so the people who submit documents are not the people who confirm
    * what was extracted from them (separation of duties).
    */
-  PIPELINE_REVIEW("pipeline:review");
+  PIPELINE_REVIEW("pipeline:review"),
+
+  /**
+   * Approve a completed review and apply the values to the contract record, or send it back to the
+   * reviewer. Held by the Approver role, not by reviewers or submitters (separation of duties:
+   * whoever submitted or reviewed a package cannot approve it).
+   */
+  PIPELINE_APPROVE("pipeline:approve");
 
   private final String code;
 

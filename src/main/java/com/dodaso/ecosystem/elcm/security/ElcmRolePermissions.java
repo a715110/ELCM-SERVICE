@@ -8,10 +8,10 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Default mapping of IAMS role names to ELCM permissions. This is a starting point to be
- * reviewed against the business roles; it is the one place to change until the role and
- * permission editor replaces it with data held in IAMS. Role names are matched case
- * insensitively and exactly as stored in IAMS.
+ * Default mapping of IAMS role names to ELCM permissions. This is a starting point to be reviewed
+ * against the business roles; it is the one place to change until the role and permission editor
+ * replaces it with data held in IAMS. Role names are matched case insensitively and exactly as
+ * stored in IAMS.
  */
 public final class ElcmRolePermissions {
 
@@ -34,19 +34,23 @@ public final class ElcmRolePermissions {
     put("Preparer", viewSubmitAndDelete);
     // Reviewers confirm extracted values. Submitting roles deliberately do not get this.
     put("Reviewer", EnumSet.of(ElcmPermission.PIPELINE_VIEW, ElcmPermission.PIPELINE_REVIEW));
-    put("Approver", viewOnly);
+    // Approvers approve and apply a completed review. They do not edit values.
+    put("Approver", EnumSet.of(ElcmPermission.PIPELINE_VIEW, ElcmPermission.PIPELINE_APPROVE));
     put("Accountant", viewOnly);
     put("Controller", viewOnly);
     put("Auditor", viewOnly);
   }
 
-  private ElcmRolePermissions() {}
+  private ElcmRolePermissions() {
+  }
 
   private static void put(String role, Set<ElcmPermission> permissions) {
     BY_ROLE.put(role.toLowerCase(Locale.ROOT), permissions);
   }
 
-  /** True when any of the given roles grants the permission. Unknown roles grant nothing. */
+  /**
+   * True when any of the given roles grants the permission. Unknown roles grant nothing.
+   */
   public static boolean isGranted(Collection<String> roleNames, ElcmPermission permission) {
     if (roleNames == null) {
       return false;
