@@ -105,17 +105,17 @@ public class ExtractionStore {
     public int recoverStale(final int staleMinutes) {
         final LocalDateTime limit = now().minus(Duration.ofMinutes(staleMinutes));
         int recovered = 0;
-        for (final Submission s : submissionRepository.findByStatus_CodeOrderByIdAsc(SUBMISSION_PROCESSING)) {
-            if (s.getUpdatedAt() != null && s.getUpdatedAt().isBefore(limit)) {
-                final Set<Long> docIds = documentIds(s.getContractPackage().getId());
-                if (!docIds.isEmpty()) {
-                    jobRepository.requeueRunning(jobStatus(JOB_QUEUED), jobStatus(JOB_RUNNING), docIds);
-                }
-                recovered += submissionRepository.moveStatus(s.getId(), s.getStatus(),
-                    submissionStatus(SUBMISSION_PENDING), now());
-                log.warn("Extraction: submission {} had no heartbeat for {} minutes, put back to PENDING",
-                    s.getId(), staleMinutes);
+        // ADDED 2026-10-15 -- the database returns only the stale ones (usually none).
+        for (final Submission s : submissionRepository
+            .findByStatus_CodeAndUpdatedAtBeforeOrderByIdAsc(SUBMISSION_PROCESSING, limit)) {
+            final Set<Long> docIds = documentIds(s.getContractPackage().getId());
+            if (!docIds.isEmpty()) {
+                jobRepository.requeueRunning(jobStatus(JOB_QUEUED), jobStatus(JOB_RUNNING), docIds);
             }
+            recovered += submissionRepository.moveStatus(s.getId(), s.getStatus(),
+                submissionStatus(SUBMISSION_PENDING), now());
+            log.warn("Extraction: submission {} had no heartbeat for {} minutes, put back to PENDING",
+                s.getId(), staleMinutes);
         }
         return recovered;
     }

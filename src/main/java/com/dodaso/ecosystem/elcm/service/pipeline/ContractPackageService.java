@@ -2,6 +2,7 @@ package com.dodaso.ecosystem.elcm.service.pipeline;
 
 import com.dodaso.ecosystem.auth.dto.UserDirectoryDTO;
 import com.dodaso.ecosystem.common.dto.FileUploadDTO;
+import com.dodaso.ecosystem.elcm.service.extraction.ExtractionWorker;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -39,6 +40,7 @@ public class ContractPackageService {
     private final ContractPackageDataService dataService;
     private final FileUploadLookupService fileUploadLookupService;
     private final AssigneeDirectoryLookupService assigneeDirectoryLookupService;
+    private final ExtractionWorker extractionWorker;
 
     public List<ContractPackageRow> findPackages() {
         final List<ContractPackageRow> rows = new ArrayList<>();
@@ -101,6 +103,7 @@ public class ContractPackageService {
 
     public void submit(final Long packageId, final String callerLoginId, final SubmitRequest request) {
         dataService.submit(packageId, callerLoginId, request != null ? request.correctionNote() : null);
+        extractionWorker.wake(); // ADDED 2026-10-15 -- committed above, so the worker can start now
     }
 
     public void unsubmit(final Long packageId) {

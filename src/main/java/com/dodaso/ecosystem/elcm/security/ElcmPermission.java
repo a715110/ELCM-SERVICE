@@ -41,7 +41,12 @@ public enum ElcmPermission {
    * before submit or while the package is being reviewed. Held by the submitting roles and by
    * reviewers, not by approvers.
    */
-  PIPELINE_CLASSIFY("pipeline:classify");
+  PIPELINE_CLASSIFY("pipeline:classify"),
+  /**
+   * Create, edit, publish and compare extraction template versions. Held by System Admin and Super
+   * Admin only (they get every permission in ElcmRolePermissions).
+   */
+  TEMPLATE_MANAGE("template:manage");
 
   private final String code;
 

@@ -6,6 +6,8 @@ import com.dodaso.ecosystem.common.dto.FileUploadDTO;
 import com.dodaso.ecosystem.elcm.service.pipeline.FileUploadLookupService;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +41,23 @@ public class ExtractionWorker {
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
 
+    /**
+     * ADDED 2026-10-15 -- set by wake() when work was just queued. poll() clears it before each
+     * look at the queue and looks again if it was set meanwhile, so a wake that arrives while a poll
+     * is finishing is not lost.
+     */
+    private final AtomicBoolean wakeRequested = new AtomicBoolean(false);
+
+    /** ADDED 2026-10-15 -- runs wake() polls off the caller's thread (one at a time). */
+    private final ExecutorService wakeExecutor = Executors.newSingleThreadExecutor(runnable -> {
+        final Thread thread = new Thread(runnable, "extraction-wake");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    /** ADDED 2026-10-15 -- when the stale check last ran (0 = not yet, so it runs on the first poll). */
+    private volatile long lastRecoverAtMs;
+
     public ExtractionWorker(final ExtractionProperties properties, final ExtractionStore store,
                             final ExtractorClient extractorClient,
                             final FileUploadLookupService fileUploadLookupService,
@@ -50,18 +69,43 @@ public class ExtractionWorker {
         this.restServiceClient = restServiceClient;
     }
 
-    @Scheduled(fixedDelayString = "${elcm.extraction.poll-interval-ms:10000}",
-        initialDelayString = "${elcm.extraction.poll-interval-ms:10000}")
+    /**
+     * ADDED 2026-10-15 -- call after a submission was committed as PENDING (submit, retry, read
+     * again). Starts a poll now instead of waiting for the next scheduled one, so the scheduled poll
+     * can be slow. Does nothing when extraction is switched off. A poll already running picks the
+     * new work up itself.
+     */
+    public void wake() {
+        if (!properties.isEnabled()) {
+            return;
+        }
+        wakeRequested.set(true);
+        wakeExecutor.execute(this::poll);
+    }
+
+    @Scheduled(fixedDelayString = "${elcm.extraction.poll-interval-ms:60000}",
+        initialDelayString = "${elcm.extraction.poll-interval-ms:60000}")
     public void poll() {
         if (!properties.isEnabled() || !busy.compareAndSet(false, true)) {
             return;
         }
         try {
-            store.recoverStale(properties.getStaleMinutes());
-            final Long submissionId = store.claimNext();
-            if (submissionId != null) {
-                process(submissionId);
+            // ADDED 2026-10-15 -- the stale check runs every recoverIntervalMs, not on every poll.
+            final long nowMs = System.currentTimeMillis();
+            if (nowMs - lastRecoverAtMs >= properties.getRecoverIntervalMs()) {
+                lastRecoverAtMs = nowMs;
+                store.recoverStale(properties.getStaleMinutes());
             }
+            // REVISED 2026-10-15 -- works through everything queued, then looks once more if a
+            // wake() came in meanwhile.
+            do {
+                wakeRequested.set(false);
+                Long submissionId = store.claimNext();
+                while (submissionId != null) {
+                    process(submissionId);
+                    submissionId = store.claimNext();
+                }
+            } while (wakeRequested.get());
         } catch (final Exception e) {
             // Never let an exception stop the schedule; the next poll starts clean.
             log.error("Extraction poll failed", e);

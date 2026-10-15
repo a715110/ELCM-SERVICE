@@ -15,8 +15,18 @@ public class ExtractionProperties {
     /** Base URL of the extractor service, e.g. http://localhost:8088 . */
     private String baseUrl = "http://localhost:8088";
 
-    /** How often the worker looks for a PENDING submission. */
-    private long pollIntervalMs = 10_000;
+    /**
+     * REVISED 2026-10-15 -- how often the worker looks for a PENDING submission when nobody woke it.
+     * Submit, retry and read again wake it at once, so this is only the safety net (and how other
+     * service instances notice work).
+     */
+    private long pollIntervalMs = 60_000;
+
+    /**
+     * ADDED 2026-10-15 -- how often the worker checks for stale PROCESSING work. This does not need
+     * the poll rhythm: stale means no heartbeat for staleMinutes, so every few minutes is plenty.
+     */
+    private long recoverIntervalMs = 300_000;
 
     /** How long to wait for one document's extraction. */
     private int requestTimeoutSeconds = 900;
@@ -55,6 +65,14 @@ public class ExtractionProperties {
 
     public void setPollIntervalMs(final long pollIntervalMs) {
         this.pollIntervalMs = pollIntervalMs;
+    }
+
+    public long getRecoverIntervalMs() {
+        return recoverIntervalMs;
+    }
+
+    public void setRecoverIntervalMs(final long recoverIntervalMs) {
+        this.recoverIntervalMs = recoverIntervalMs;
     }
 
     public int getRequestTimeoutSeconds() {

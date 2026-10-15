@@ -208,13 +208,10 @@ public class ExtractionReadService {
 
     /** 1 means next up. Counts PENDING submissions with a smaller or equal id. */
     private int queuePosition(final Submission submission) {
-        int position = 0;
-        for (final Submission s : submissionRepository.findByStatus_CodeOrderByIdAsc(ExtractionStore.SUBMISSION_PENDING)) {
-            if (s.getId() <= submission.getId()) {
-                position++;
-            }
-        }
-        return Math.max(1, position);
+        // ADDED 2026-10-15 -- counted in the database instead of loading every PENDING submission.
+        final long position = submissionRepository.countByStatus_CodeAndIdLessThanEqual(
+            ExtractionStore.SUBMISSION_PENDING, submission.getId());
+        return (int) Math.max(1, position);
     }
 
     private Map<Long, ExtractionJob> latestJobs(final List<PackageDocument> links) {

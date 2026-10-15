@@ -23,6 +23,7 @@ public class ExtractionService {
     private final ReviewStore reviewStore;
     private final ApplyStore applyStore;
     private final FileUploadLookupService fileUploadLookupService;
+    private final ExtractionWorker worker;
 
     public ExtractionStatus status(final Long packageId) {
         final ExtractionStatus status = readService.status(packageId);
@@ -66,6 +67,7 @@ public class ExtractionService {
     /** Failed extraction back to the queue; only the failed documents run again. */
     public void retry(final Long packageId) {
         store.requeueFailed(packageId);
+        worker.wake(); // ADDED 2026-10-15 -- start now instead of at the next scheduled poll
     }
 
     /** Reviewer: correct and/or confirm one field. */
@@ -78,6 +80,7 @@ public class ExtractionService {
     public void reprocess(final Long packageId, final Long stagedDocumentId, final String reason,
                           final String caller) {
         reviewStore.reprocess(packageId, stagedDocumentId, reason, caller);
+        worker.wake(); // ADDED 2026-10-15 -- start now instead of at the next scheduled poll
     }
 
     /** Reviewer: confirm every field the extractor verified. Returns how many were confirmed. */

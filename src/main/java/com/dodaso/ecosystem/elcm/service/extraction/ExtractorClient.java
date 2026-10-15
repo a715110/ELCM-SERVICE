@@ -40,10 +40,19 @@ public class ExtractorClient {
 
     public ExtractorResult extract(final String templateId, final String fileName, final String contentType,
                                    final byte[] content) throws ExtractorException {
+        return extract(templateId, null, fileName, contentType, content);
+    }
+
+    /**
+     * templateJson (optional) is the full template definition; the extractor then uses it and
+     * templateId is only a label. Without it the extractor reads its own file named templateId.
+     */
+    public ExtractorResult extract(final String templateId, final String templateJson, final String fileName,
+                                   final String contentType, final byte[] content) throws ExtractorException {
         final String boundary = "----elcm" + UUID.randomUUID().toString().replace("-", "");
         final byte[] body;
         try {
-            body = multipart(boundary, templateId, fileName, contentType, content);
+            body = multipart(boundary, templateId, templateJson, fileName, contentType, content);
         } catch (final IOException e) {
             throw new ExtractorException("Could not build the extractor request", e);
         }
@@ -77,12 +86,18 @@ public class ExtractorClient {
         }
     }
 
-    private static byte[] multipart(final String boundary, final String templateId, final String fileName,
-                                    final String contentType, final byte[] content) throws IOException {
+    private static byte[] multipart(final String boundary, final String templateId, final String templateJson,
+                                    final String fileName, final String contentType, final byte[] content)
+        throws IOException {
         final ByteArrayOutputStream out = new ByteArrayOutputStream(content.length + 1024);
         out.write(("--" + boundary + "\r\n"
             + "Content-Disposition: form-data; name=\"template_id\"\r\n\r\n"
             + templateId + "\r\n").getBytes(StandardCharsets.UTF_8));
+        if (templateJson != null && !templateJson.isBlank()) {
+            out.write(("--" + boundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"template_json\"\r\n\r\n"
+                + templateJson + "\r\n").getBytes(StandardCharsets.UTF_8));
+        }
         out.write(("--" + boundary + "\r\n"
             + "Content-Disposition: form-data; name=\"file\"; filename=\"" + safeName(fileName) + "\"\r\n"
             + "Content-Type: " + (contentType == null || contentType.isBlank()
