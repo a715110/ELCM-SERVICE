@@ -84,4 +84,18 @@ public final class TemplateModels {
 
   /** Start a brand new template (first version is an empty draft). */
   public record NewTemplateRequest(String name, Long contractTypeId, String reason) {}
+
+  /**
+   * ADDED 2026-10-15 - Delete a whole template (every version) for good. confirmName must be the
+   * template's name; reason is kept in the change log.
+   */
+  public record DeleteRequest(String confirmName, String reason) {}
+
+  /**
+   * ADDED 2026-10-15 - What deleting a template would remove. jobs is the number of extraction jobs
+   * (documents read) that used any version; when it is more than zero the template cannot be
+   * deleted.
+   */
+  public record DeleteImpact(
+      String name, String contractType, int versions, boolean published, long jobs) {}
 }

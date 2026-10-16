@@ -5,6 +5,8 @@ import com.dodaso.ecosystem.elcm.security.ElcmPermission;
 import com.dodaso.ecosystem.elcm.security.RequiresPermission;
 import com.dodaso.ecosystem.elcm.service.template.TemplateAdminService;
 import com.dodaso.ecosystem.elcm.service.template.TemplateModels.CreateDraftRequest;
+import com.dodaso.ecosystem.elcm.service.template.TemplateModels.DeleteImpact;
+import com.dodaso.ecosystem.elcm.service.template.TemplateModels.DeleteRequest;
 import com.dodaso.ecosystem.elcm.service.template.TemplateModels.Detail;
 import com.dodaso.ecosystem.elcm.service.template.TemplateModels.Diff;
 import com.dodaso.ecosystem.elcm.service.template.TemplateModels.Event;
@@ -14,6 +16,9 @@ import com.dodaso.ecosystem.elcm.service.template.TemplateModels.ReasonRequest;
 import com.dodaso.ecosystem.elcm.service.template.TemplateModels.Result;
 import com.dodaso.ecosystem.elcm.service.template.TemplateModels.SaveRequest;
 import com.dodaso.ecosystem.elcm.service.template.TemplateModels.Summary;
+import com.dodaso.ecosystem.elcm.service.template.TemplateTrialService;
+import com.dodaso.ecosystem.elcm.service.template.TrialModels.Trial;
+import com.dodaso.ecosystem.elcm.service.template.TrialModels.TrialRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +43,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ExtractionTemplateController {
 
   private final TemplateAdminService templateAdminService;
+  private final TemplateTrialService templateTrialService;
   private final CallerIdentityResolver callerIdentityResolver;
 
   /** Every version of every template. */
@@ -134,5 +140,49 @@ public class ExtractionTemplateController {
         id,
         request == null ? null : request.reason(),
         callerIdentityResolver.loginIdOf(httpRequest));
+  }
+
+  /**
+   * ADDED 2026-10-15 - starts a trial run: reads one document with the fields of this version and
+   * saves nothing. Answers at once with the trial's id; ask {@link #trial} for the result. A
+   * request that cannot be accepted comes back with state REFUSED and a message.
+   */
+  @PostMapping("/{id}/trial")
+  @RequiresPermission(ElcmPermission.TEMPLATE_MANAGE)
+  public Trial startTrial(
+      @PathVariable final Long id,
+      @RequestBody final TrialRequest request,
+      final HttpServletRequest httpRequest) {
+    return templateTrialService.start(
+        id, request, callerIdentityResolver.loginIdOf(httpRequest));
+  }
+
+  /** ADDED 2026-10-15 - a trial run as it is now. 404 when unknown or older than an hour. */
+  @GetMapping("/trials/{trialId}")
+  @RequiresPermission(ElcmPermission.TEMPLATE_MANAGE)
+  public Trial trial(@PathVariable final String trialId) {
+    return templateTrialService.status(trialId);
+  }
+
+  /** ADDED 2026-10-15 - what deleting the template this version belongs to would remove. */
+  @GetMapping("/{id}/delete-impact")
+  @RequiresPermission(ElcmPermission.TEMPLATE_MANAGE)
+  public DeleteImpact deleteImpact(@PathVariable final Long id) {
+    return templateAdminService.deleteImpact(id);
+  }
+
+  /**
+   * ADDED 2026-10-15 - deletes the template this version belongs to, every version, for good.
+   * Messages in the result (and nothing deleted) when the confirmation is wrong or documents were
+   * read with it.
+   */
+  @PostMapping("/{id}/delete")
+  @RequiresPermission(ElcmPermission.TEMPLATE_MANAGE)
+  public Result deleteTemplate(
+      @PathVariable final Long id,
+      @RequestBody final DeleteRequest request,
+      final HttpServletRequest httpRequest) {
+    return templateAdminService.deleteTemplate(
+        id, request.confirmName(), request.reason(), callerIdentityResolver.loginIdOf(httpRequest));
   }
 }

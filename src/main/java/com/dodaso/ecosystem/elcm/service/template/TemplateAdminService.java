@@ -11,6 +11,7 @@ import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionTemplateReposit
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpContractTypeRepository;
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpFieldDataTypeRepository;
 import com.dodaso.ecosystem.elcm.service.template.TemplateModels.Change;
+import com.dodaso.ecosystem.elcm.service.template.TemplateModels.DeleteImpact;
 import com.dodaso.ecosystem.elcm.service.template.TemplateModels.Detail;
 import com.dodaso.ecosystem.elcm.service.template.TemplateModels.Diff;
 import com.dodaso.ecosystem.elcm.service.template.TemplateModels.Event;
@@ -19,6 +20,8 @@ import com.dodaso.ecosystem.elcm.service.template.TemplateModels.Option;
 import com.dodaso.ecosystem.elcm.service.template.TemplateModels.Options;
 import com.dodaso.ecosystem.elcm.service.template.TemplateModels.Result;
 import com.dodaso.ecosystem.elcm.service.template.TemplateModels.Summary;
+import com.dodaso.ecosystem.elcm.service.template.TrialModels.TrialDefinition;
+import jakarta.persistence.EntityManager;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -55,11 +58,15 @@ public class TemplateAdminService {
   public static final String PUBLISHED = "PUBLISHED";
   public static final String RETIRED = "RETIRED";
 
+  /** ADDED 2026-10-15 - change log type of a template that was deleted for good. */
+  public static final String TEMPLATE_DELETED = "TEMPLATE_DELETED";
+
   private final ExtractionTemplateRepository templateRepository;
   private final ExtractionTemplateFieldRepository fieldRepository;
   private final ExtractionTemplateEventRepository eventRepository;
   private final LkpFieldDataTypeRepository dataTypeRepository;
   private final LkpContractTypeRepository contractTypeRepository;
+  private final EntityManager entityManager;
 
   /** Fields Apply depends on; a published template that has one cannot lose it. */
   @Value("${elcm.template.protected-keys:lessor_name}")
@@ -102,6 +109,24 @@ public class TemplateAdminService {
     final ExtractionTemplate to = require(toId);
     final List<Change> changes = TemplateRules.diff(fields(fromId), fields(toId));
     return new Diff(from.getId(), from.getVersion(), to.getId(), to.getVersion(), changes);
+  }
+
+  /**
+   * ADDED 2026-10-15 - what a trial run needs: the stored fields of one version and the definition
+   * built from them. Always built from the fields, even when the version still has an extractor
+   * YAML file, so the trial shows what the version says.
+   */
+  @Transactional(readOnly = true)
+  public TrialDefinition trialDefinition(final Long id) {
+    final ExtractionTemplate t = require(id);
+    final List<Field> fields = fields(id);
+    final String label = TemplateDefinitions.label(t);
+    return new TrialDefinition(
+        t.getId(),
+        t.getName() + ", version " + t.getVersion(),
+        label,
+        TemplateRules.definitionJson(label, t.getName(), fields),
+        fields);
   }
 
   @Transactional(readOnly = true)
@@ -350,6 +375,85 @@ public class TemplateAdminService {
     log.info(
         "Extraction template {} version {} published by {}", t.getName(), t.getVersion(), caller);
     return new Result(List.of(), detail(t));
+  }
+
+  /** ADDED 2026-10-15 - what deleting the template this version belongs to would remove. */
+  @Transactional(readOnly = true)
+  public DeleteImpact deleteImpact(final Long id) {
+    final ExtractionTemplate t = require(id);
+    final List<ExtractionTemplate> versions = templateRepository.findByNameOrderByIdDesc(t.getName());
+    return new DeleteImpact(
+        t.getName(),
+        t.getContractType().getLabel(),
+        versions.size(),
+        versions.stream().anyMatch(v -> PUBLISHED.equals(v.getStatus())),
+        jobsUsing(versions));
+  }
+
+  /**
+   * ADDED 2026-10-15 - deletes a template for good: every version and its fields. Refused (nothing
+   * changes, the messages say why) when the name is not typed right, the reason is too short, or any
+   * document was ever read with a version, because deleting would erase its results and review
+   * history. The change log keeps a line saying the template was deleted.
+   */
+  @Transactional
+  public Result deleteTemplate(
+      final Long id, final String confirmName, final String reason, final String caller) {
+    final ExtractionTemplate t = require(id);
+    final List<ExtractionTemplate> versions = templateRepository.findByNameOrderByIdDesc(t.getName());
+    final String why = reason == null ? "" : reason.trim();
+    final List<String> problems = new ArrayList<>();
+    if (confirmName == null || !confirmName.trim().equals(t.getName())) {
+      problems.add("Type the name of the template exactly as shown to confirm.");
+    }
+    if (why.length() < TemplateRules.MIN_REASON || why.length() > TemplateRules.MAX_REASON) {
+      problems.add(
+          "Give a reason of "
+              + TemplateRules.MIN_REASON
+              + " to "
+              + TemplateRules.MAX_REASON
+              + " characters.");
+    }
+    final long jobs = jobsUsing(versions);
+    if (jobs > 0) {
+      problems.add(
+          "Documents were read with this template ("
+              + jobs
+              + " extraction jobs). Deleting it would erase their results and review history, so it"
+              + " cannot be deleted here.");
+    }
+    if (!problems.isEmpty()) {
+      return new Result(problems, null);
+    }
+    final ExtractionTemplate newest = versions.get(0);
+    final String published =
+        versions.stream()
+            .filter(v -> PUBLISHED.equals(v.getStatus()))
+            .map(v -> "published version " + v.getVersion())
+            .findFirst()
+            .orElse("no published version");
+    log(
+        newest,
+        TEMPLATE_DELETED,
+        why,
+        "Template deleted: " + versions.size() + " versions, " + published + ".",
+        caller);
+    for (final ExtractionTemplate v : versions) {
+      fieldRepository.deleteByTemplate_Id(v.getId());
+    }
+    fieldRepository.flush();
+    templateRepository.deleteAll(versions);
+    log.info(
+        "Extraction template {} deleted by {} ({} versions)", t.getName(), caller, versions.size());
+    return new Result(List.of(), null);
+  }
+
+  private long jobsUsing(final List<ExtractionTemplate> versions) {
+    final List<Long> ids = versions.stream().map(ExtractionTemplate::getId).toList();
+    return entityManager
+        .createQuery("select count(j) from ExtractionJob j where j.template.id in :ids", Long.class)
+        .setParameter("ids", ids)
+        .getSingleResult();
   }
 
   // ---- helpers ----
