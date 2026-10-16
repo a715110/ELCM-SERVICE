@@ -17,6 +17,7 @@ import com.dodaso.ecosystem.elcm.repository.lookup.LkpExtractionJobStatusReposit
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpSubmissionStatusRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.PackageDocumentRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.SubmissionRepository;
+import com.dodaso.ecosystem.elcm.service.template.TemplateDefinitions;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -73,8 +74,14 @@ public class ExtractionStore {
     private final ExtractionJobRepository jobRepository;
     private final ExtractionFieldResultRepository resultRepository;
 
-    /** One document to extract: what the worker needs, with no entity attached. */
-    public record JobTicket(Long jobId, Long stagedDocumentId, Long fileUploadId, String extractorTemplateId) {
+    /**
+     * One document to extract: what the worker needs, with no entity attached. REVISED 2026-10-15:
+     * templateJson is the published template as stored in the database, sent to the extractor with
+     * the document. It is null for a template that predates template management (no field
+     * descriptions); the extractor then reads its own YAML file named extractorTemplateId.
+     */
+    public record JobTicket(Long jobId, Long stagedDocumentId, Long fileUploadId, String extractorTemplateId,
+                            String templateJson) {
     }
 
     /** What prepareJobs found: jobs to run, and how many documents were already done. */
@@ -133,6 +140,7 @@ public class ExtractionStore {
         final LkpExtractionJobStatus queued = jobStatus(JOB_QUEUED);
         final List<JobTicket> tickets = new ArrayList<>();
         int alreadyCompleted = 0;
+        final Map<Long, String> definitions = new HashMap<>(); // template id -> JSON, built once per template
         for (final PackageDocument link : packageDocumentRepository
             .findDetailedByPackageId(submission.getContractPackage().getId())) {
             final StagedDocument doc = link.getStagedDocument();
@@ -160,8 +168,15 @@ public class ExtractionStore {
                 job.setAttemptCount(0);
             }
             final ExtractionJob saved = jobRepository.save(job);
+            final Long templateId = template.get().getId();
+            if (!definitions.containsKey(templateId)) {
+                // ADDED 2026-10-15 -- the definition sent to the extractor comes from the database, so
+                // publishing in the Extraction Templates screen is what changes extraction.
+                definitions.put(templateId, TemplateDefinitions.forExtractor(template.get(),
+                    templateFieldRepository.findByTemplate_IdOrderByDisplayOrder(templateId)));
+            }
             tickets.add(new JobTicket(saved.getId(), doc.getId(), doc.getFileUploadId(),
-                template.get().getExtractorTemplateId()));
+                template.get().getExtractorTemplateId(), definitions.get(templateId)));
         }
         return new Prepared(tickets, alreadyCompleted);
     }

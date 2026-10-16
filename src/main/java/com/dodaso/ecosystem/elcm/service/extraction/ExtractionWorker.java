@@ -150,7 +150,7 @@ public class ExtractionWorker {
                 }
                 final byte[] content = download(ticket.fileUploadId());
                 final ExtractorResult result = extractorClient.extract(ticket.extractorTemplateId(),
-                    file.getFileName(), file.getContentType(), content);
+                    ticket.templateJson(), file.getFileName(), file.getContentType(), content);
                 store.saveResult(ticket.jobId(), submissionId, result);
                 return true;
             } catch (final Exception e) {
