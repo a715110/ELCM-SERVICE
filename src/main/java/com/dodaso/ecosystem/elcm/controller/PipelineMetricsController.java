@@ -4,26 +4,19 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.dodaso.ecosystem.elcm.container.cust.PipelineMetricsDTOContainer;
 import com.dodaso.ecosystem.elcm.security.ElcmPermission;
 import com.dodaso.ecosystem.elcm.security.RequiresPermission;
 import com.dodaso.ecosystem.elcm.service.pipeline.PipelineMetricsService;
+import com.dodaso.ecosystem.elcm.service.pipeline.PipelineOverview;
 
 import lombok.RequiredArgsConstructor;
 
 /**
- * REST access to PipelineMetricsService. Package deliberately
- * com.dodaso.ecosystem.elcm.controller (no ".ui" segment), per request --
- * note this differs from entity/repository/service/bean, which all live
- * under com.dodaso.ecosystem.elcm.ui.*. Still picked up by component
- * scanning either way, since ElcmUiApplication scans the whole
- * com.dodaso.ecosystem ancestor package.
+ * REST access to PipelineMetricsService.
  *
- * NO SECURITY on this endpoint yet -- spring-security hasn't been added to
- * the project (see pom.xml's MINIMUM-JARS list), so this is currently
- * unauthenticated/public once the app is reachable. Flagging plainly:
- * business data behind an open REST endpoint is a real gap, not something
- * to quietly leave for later without saying so.
+ * <p>REVISED 2026-10-16: returns the flat PipelineOverview (five cards plus the failed count)
+ * instead of the four-count PipelineMetricsDTOContainer. The old DTO classes in the data model
+ * are no longer used here and stay untouched.
  */
 @RestController
 @RequestMapping("/api/v1/pipeline/metrics")
@@ -34,7 +27,7 @@ public class PipelineMetricsController {
 
     @GetMapping
     @RequiresPermission(ElcmPermission.PIPELINE_VIEW)
-    public PipelineMetricsDTOContainer getMetrics() {
-        return pipelineMetricsService.getMetrics();
+    public PipelineOverview getMetrics() {
+        return pipelineMetricsService.getOverview();
     }
 }
