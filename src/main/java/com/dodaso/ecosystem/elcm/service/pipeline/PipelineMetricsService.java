@@ -1,11 +1,14 @@
 package com.dodaso.ecosystem.elcm.service.pipeline;
 
+import java.util.HashMap;
+import java.util.Map;
+
+import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dodaso.ecosystem.elcm.container.cust.PipelineMetricsDTOContainer;
 import com.dodaso.ecosystem.elcm.dto.cust.PipelineMetricsDTO;
-import com.dodaso.ecosystem.elcm.repository.pipeline.StagedDocumentRepository;
 
 import lombok.RequiredArgsConstructor;
 
@@ -22,26 +25,36 @@ import lombok.RequiredArgsConstructor;
  * stages (UPLOADING, VALIDATING, VALID, SUBMITTED), so this keeps all four
  * internally consistent rather than answering "Submitted" from a different
  * concept (e.g. a count of submission rows).
+ *
+ * REVISED 2026-10-15: one grouped query for all four counts instead of four count queries. Deleted
+ * documents stay out because StagedDocument carries @SQLRestriction("deleted_at IS NULL").
  */
 @Service
 @RequiredArgsConstructor
 public class PipelineMetricsService {
 
-    private final StagedDocumentRepository stagedDocumentRepository;
+    private final EntityManager entityManager;
 
     @Transactional(readOnly = true)
     public PipelineMetricsDTOContainer getMetrics() {
-        PipelineMetricsDTOContainer dtoContainer = new PipelineMetricsDTOContainer();
-        
-        PipelineMetricsDTO instance =  new PipelineMetricsDTO(
-            (int) stagedDocumentRepository.countByStatus_Code("UPLOADING"),
-            (int) stagedDocumentRepository.countByStatus_Code("VALIDATING"),
-            (int) stagedDocumentRepository.countByStatus_Code("VALID"),
-            (int) stagedDocumentRepository.countByStatus_Code("SUBMITTED")
+        final Map<String, Long> counts = new HashMap<>();
+        for (final Object[] row : entityManager
+            .createQuery("select d.status.code, count(d) from StagedDocument d group by d.status.code",
+                Object[].class)
+            .getResultList()) {
+            counts.put((String) row[0], ((Number) row[1]).longValue());
+        }
+
+        final PipelineMetricsDTOContainer dtoContainer = new PipelineMetricsDTOContainer();
+        final PipelineMetricsDTO instance = new PipelineMetricsDTO(
+            counts.getOrDefault("UPLOADING", 0L).intValue(),
+            counts.getOrDefault("VALIDATING", 0L).intValue(),
+            counts.getOrDefault("VALID", 0L).intValue(),
+            counts.getOrDefault("SUBMITTED", 0L).intValue()
         );
 
         dtoContainer.setPipelineMetricsDTO(instance);
         return dtoContainer;
     }
-   
+
 }

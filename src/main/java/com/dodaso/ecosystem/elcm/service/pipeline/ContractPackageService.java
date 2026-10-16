@@ -57,7 +57,8 @@ public class ContractPackageService {
                 d.getRolesAssigned() + "/" + d.getDocCount() + " roles",
                 d.getStatus(),
                 d.getStatusCode(),
-                (int) d.getRolesAssigned()));
+                (int) d.getRolesAssigned(),
+                d.getExtractionState()));
         }
         return rows;
     }

@@ -33,4 +33,6 @@ public class ContractPackageRow implements Serializable {
     private final String status;
     private final String statusCode;
     private final int rolesAssigned;
+    /** ADDED 2026-10-15 -- stage of the newest submission (QUEUED, RUNNING, DONE, ...); null when none. */
+    private final String extractionState;
 }

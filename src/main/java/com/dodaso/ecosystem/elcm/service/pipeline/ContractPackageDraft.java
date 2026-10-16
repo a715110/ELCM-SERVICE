@@ -20,4 +20,6 @@ public class ContractPackageDraft {
     private final long rolesAssigned;
     private final String status;
     private final String statusCode;
+    /** ADDED 2026-10-15 -- stage of the newest submission (QUEUED, RUNNING, DONE, ...); null when none. */
+    private final String extractionState;
 }

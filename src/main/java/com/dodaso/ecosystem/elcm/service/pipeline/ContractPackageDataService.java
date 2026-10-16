@@ -18,6 +18,10 @@ import com.dodaso.ecosystem.elcm.repository.pipeline.ContractPackageRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.PackageDocumentRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.StagedDocumentRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.SubmissionRepository;
+import com.dodaso.ecosystem.elcm.service.extraction.ApplyStore;
+import com.dodaso.ecosystem.elcm.service.extraction.ExtractionStore;
+import com.dodaso.ecosystem.elcm.service.extraction.ReviewStore;
+import jakarta.persistence.EntityManager;
 import java.time.LocalDateTime;
 import java.time.Year;
 import java.time.ZoneOffset;
@@ -29,7 +33,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -74,27 +77,81 @@ public class ContractPackageDataService {
     private final SubmissionRepository submissionRepository;
     private final LkpSubmissionStatusRepository lkpSubmissionStatusRepository;
     private final LkpStagedDocumentStatusRepository lkpStagedDocumentStatusRepository;
+    private final EntityManager entityManager;
 
+    /**
+     * REVISED 2026-10-15 -- three queries for the whole list, however many packages there are. It used
+     * to run two count queries per package and then load each package's record, workspace and status
+     * one by one (about 35 statements for 18 packages). Now: the packages with status, workspace and
+     * target record joined in; the document and role counts of all packages in one grouped query; and
+     * the status of each package's newest submission in one query (the stage the page shows after
+     * Validated, so the page no longer asks the extraction status of every package one by one).
+     */
     @Transactional(readOnly = true)
     public List<ContractPackageDraft> loadPackages() {
+        final List<ContractPackage> packages = entityManager
+            .createQuery("select p from ContractPackage p join fetch p.status join fetch p.workspace "
+                + "left join fetch p.targetRecord order by p.id desc", ContractPackage.class)
+            .getResultList();
+
+        // package id -> {documents, documents with a role other than UNDEFINED}
+        final Map<Long, long[]> counts = new HashMap<>();
+        for (final Object[] row : entityManager
+            .createQuery("select pd.contractPackage.id, count(pd), "
+                + "sum(case when pd.documentRole.code <> :undefined then 1 else 0 end) "
+                + "from PackageDocument pd group by pd.contractPackage.id", Object[].class)
+            .setParameter("undefined", UNDEFINED_ROLE_CODE)
+            .getResultList()) {
+            counts.put((Long) row[0], new long[] {((Number) row[1]).longValue(), ((Number) row[2]).longValue()});
+        }
+
+        // package id -> status code of its newest submission
+        final Map<Long, String> newestSubmission = new HashMap<>();
+        for (final Object[] row : entityManager
+            .createQuery("select s.contractPackage.id, s.status.code from Submission s "
+                + "where s.id in (select max(s2.id) from Submission s2 group by s2.contractPackage.id)",
+                Object[].class)
+            .getResultList()) {
+            newestSubmission.put((Long) row[0], (String) row[1]);
+        }
+
         final List<ContractPackageDraft> drafts = new ArrayList<>();
-        for (final ContractPackage pkg : contractPackageRepository.findAll(Sort.by(Sort.Direction.DESC, "id"))) {
-            final long totalDocs = packageDocumentRepository.countByContractPackage_Id(pkg.getId());
-            final long rolesAssigned = packageDocumentRepository
-                .countByContractPackage_IdAndDocumentRole_CodeNot(pkg.getId(), UNDEFINED_ROLE_CODE);
+        for (final ContractPackage pkg : packages) {
+            final long[] c = counts.getOrDefault(pkg.getId(), new long[] {0, 0});
             final ContractRecord target = pkg.getTargetRecord();
             drafts.add(new ContractPackageDraft(
                 pkg.getId(),
                 pkg.getPackageCode(),
-                (int) totalDocs,
+                (int) c[0],
                 target != null ? target.getRecordCode() : "Unassigned",
                 pkg.getWorkspace().getCode(),
                 pkg.getAssigneeId(),
-                rolesAssigned,
+                c[1],
                 pkg.getStatus().getLabel(),
-                pkg.getStatus().getCode()));
+                pkg.getStatus().getCode(),
+                extractionStateOf(newestSubmission.get(pkg.getId()))));
         }
         return drafts;
+    }
+
+    /**
+     * ADDED 2026-10-15 -- the extraction stage for a submission status code. Must give the same words
+     * as the state in ExtractionReadService.status, which the page used to ask for each package.
+     */
+    static String extractionStateOf(final String submissionStatusCode) {
+        if (submissionStatusCode == null) {
+            return null;
+        }
+        return switch (submissionStatusCode) {
+            case ExtractionStore.SUBMISSION_PENDING -> "QUEUED";
+            case ExtractionStore.SUBMISSION_PROCESSING -> "RUNNING";
+            case ExtractionStore.SUBMISSION_EXTRACTED -> "DONE";
+            case ExtractionStore.SUBMISSION_FAILED -> "FAILED";
+            case ReviewStore.SUBMISSION_DECLINED -> "DECLINED";
+            case ReviewStore.SUBMISSION_REVIEWED -> "REVIEWED";
+            case ApplyStore.SUBMISSION_APPLIED -> "APPLIED";
+            default -> submissionStatusCode;
+        };
     }
 
     @Transactional(readOnly = true)
