@@ -1,8 +1,12 @@
 package com.dodaso.ecosystem.elcm.service.pipeline;
 
 /**
- * ADDED 2026-10-16 -- the numbers behind the Document Pipeline cards. Flat on purpose: the page
- * reads the JSON as a plain map. Documents are counted in the first card, packages in the others.
+ * The numbers behind the Document Pipeline cards. Flat on purpose: the page reads the JSON as a
+ * plain map. Documents are counted in the first card, packages in the others.
+ *
+ * <p>REVISED 2026-10-16: with "Mine only" the card numbers cover the caller's own work (documents
+ * uploaded by the caller, packages assigned to the caller). failedExtractions and alertSentBack
+ * always count everyone, so the red badge never hides a problem.
  *
  * @param stagedDocuments documents that are in no package
  * @param uploadedToday of those, uploaded since midnight UTC
@@ -15,7 +19,8 @@ package com.dodaso.ecosystem.elcm.service.pipeline;
  * @param fieldsNeedReview fields flagged for review across those packages
  * @param awaitingApproval packages whose newest submission is reviewed
  * @param oldestWaitingDays age in whole days of the longest waiting one, 0 when none
- * @param failedExtractions packages whose newest submission failed
+ * @param failedExtractions packages whose newest submission failed (everyone's)
+ * @param alertSentBack packages sent back to Assembly (everyone's), for the red badge
  */
 public record PipelineOverview(
     long stagedDocuments,
@@ -29,4 +34,5 @@ public record PipelineOverview(
     long fieldsNeedReview,
     long awaitingApproval,
     long oldestWaitingDays,
-    long failedExtractions) {}
+    long failedExtractions,
+    long alertSentBack) {}
