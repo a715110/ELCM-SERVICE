@@ -8,6 +8,7 @@ import com.dodaso.ecosystem.elcm.entity.pipeline.ContractPackage;
 import com.dodaso.ecosystem.elcm.entity.pipeline.PackageDocument;
 import com.dodaso.ecosystem.elcm.entity.pipeline.Submission;
 import com.dodaso.ecosystem.elcm.entity.pipeline.SubmissionSendBack;
+import com.dodaso.ecosystem.elcm.integration.ecws.EcwsTaskPublisher;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionFieldResultRepository;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionFieldRevisionRepository;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionJobRepository;
@@ -92,6 +93,8 @@ public class ReviewStore {
   private final LkpExtractionJobStatusRepository lkpJobStatusRepository;
   private final ExtractionFieldRevisionRepository revisionRepository;
   private final ReviewerSeparation reviewerSeparation;
+  /** ADDED 2026-10-16: queues ECWS tasks for review events. */
+  private final EcwsTaskPublisher ecwsTaskPublisher;
 
   /**
    * Saves one field: the corrected value (blank clears it) and whether the reviewer confirms it.
@@ -189,6 +192,8 @@ public class ReviewStore {
     if (moved != 1) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "The review was already completed");
     }
+    // ADDED 2026-10-16: the review task is done; the approver is next.
+    ecwsTaskPublisher.reviewCompleted(packageId, caller);
   }
 
   /**
@@ -201,6 +206,8 @@ public class ReviewStore {
   @Transactional
   public void reopen(final Long packageId, final String caller) {
     reopenNewest(packageId, caller);
+    // ADDED 2026-10-16: back to review.
+    ecwsTaskPublisher.reviewReopened(packageId, caller);
   }
 
   /**
@@ -233,6 +240,8 @@ public class ReviewStore {
     row.setSentBy(caller != null && !caller.isBlank() ? caller : "system");
     row.setSentAt(now);
     sendBackRepository.save(row);
+    // ADDED 2026-10-16: review again, and tell the person in charge.
+    ecwsTaskPublisher.sentBack(packageId, caller, text);
   }
 
   /** The send-backs of the package's newest submission, newest first; empty when none. */
@@ -365,6 +374,8 @@ public class ReviewStore {
     pkg.setStatus(lkpPackageStatusRepository.findByCode(PACKAGE_ASSEMBLY)
         .orElseThrow(() -> seedMissing("lkp_package_status", PACKAGE_ASSEMBLY)));
     contractPackageRepository.save(pkg);
+    // ADDED 2026-10-16: close the open tasks and ask the person in charge to fix the package.
+    ecwsTaskPublisher.declined(packageId, caller, text);
   }
 
   private static ResponseStatusException seedMissing(final String table, final String code) {

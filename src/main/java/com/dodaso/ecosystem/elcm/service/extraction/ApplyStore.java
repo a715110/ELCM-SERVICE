@@ -6,6 +6,7 @@ import com.dodaso.ecosystem.elcm.entity.pipeline.ContractRecord;
 import com.dodaso.ecosystem.elcm.entity.pipeline.ContractTerm;
 import com.dodaso.ecosystem.elcm.entity.pipeline.Counterparty;
 import com.dodaso.ecosystem.elcm.entity.pipeline.Submission;
+import com.dodaso.ecosystem.elcm.integration.ecws.EcwsTaskPublisher;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionFieldRevisionRepository;
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpPackageStatusRepository;
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpSubmissionStatusRepository;
@@ -76,6 +77,8 @@ public class ApplyStore {
   private final ContractPackageRepository contractPackageRepository;
   private final LkpPackageStatusRepository lkpPackageStatusRepository;
   private final ReviewerSeparation reviewerSeparation;
+  /** ADDED 2026-10-16: closes the ECWS approval task. */
+  private final EcwsTaskPublisher ecwsTaskPublisher;
 
   /**
    * The records a reviewer can choose when the package has no target: same workspace, active or
@@ -178,6 +181,8 @@ public class ApplyStore {
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
             "Missing lkp_package_status row: COMPLETED (run package_completed.sql)")));
     contractPackageRepository.save(pkg);
+    // ADDED 2026-10-16: nothing is left to do for this package.
+    ecwsTaskPublisher.applied(packageId, caller);
     return new ApplyResult(written, unchanged, skipped, counterparty[0], counterparty[1],
         record.getRecordCode());
   }

@@ -9,6 +9,7 @@ import com.dodaso.ecosystem.elcm.entity.lookup.LkpSubmissionStatus;
 import com.dodaso.ecosystem.elcm.entity.pipeline.PackageDocument;
 import com.dodaso.ecosystem.elcm.entity.pipeline.StagedDocument;
 import com.dodaso.ecosystem.elcm.entity.pipeline.Submission;
+import com.dodaso.ecosystem.elcm.integration.ecws.EcwsTaskPublisher;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionFieldResultRepository;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionJobRepository;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionTemplateFieldRepository;
@@ -73,6 +74,8 @@ public class ExtractionStore {
     private final ExtractionTemplateFieldRepository templateFieldRepository;
     private final ExtractionJobRepository jobRepository;
     private final ExtractionFieldResultRepository resultRepository;
+    /** ADDED 2026-10-16: queues ECWS tasks for ready and failed extractions. */
+    private final EcwsTaskPublisher ecwsTaskPublisher;
 
     /**
      * One document to extract: what the worker needs, with no entity attached. REVISED 2026-10-15:
@@ -262,8 +265,17 @@ public class ExtractionStore {
     @Transactional
     public void finish(final Long submissionId, final boolean allOk) {
         final Submission s = submissionRepository.findById(submissionId).orElseThrow();
-        submissionRepository.moveStatus(submissionId, s.getStatus(),
+        // REVISED 2026-10-16: queue the ECWS task only when this call really moved the submission.
+        final int moved = submissionRepository.moveStatus(submissionId, s.getStatus(),
             submissionStatus(allOk ? SUBMISSION_EXTRACTED : SUBMISSION_FAILED), now());
+        if (moved == 1) {
+            final Long packageId = s.getContractPackage().getId();
+            if (allOk) {
+                ecwsTaskPublisher.reviewReady(packageId);
+            } else {
+                ecwsTaskPublisher.extractionFailed(packageId);
+            }
+        }
     }
 
     /** Retry: FAILED back to PENDING. 404 unknown package, 409 when the newest submission is not FAILED. */
@@ -279,6 +291,8 @@ public class ExtractionStore {
         }
         submissionRepository.moveStatus(newest.getId(), newest.getStatus(),
             submissionStatus(SUBMISSION_PENDING), now());
+        // ADDED 2026-10-16: the failure task is done once a retry starts.
+        ecwsTaskPublisher.retried(packageId);
     }
 
     private Set<Long> documentIds(final Long packageId) {

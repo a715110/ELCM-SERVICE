@@ -1,6 +1,7 @@
 package com.dodaso.ecosystem.elcm.service.pipeline;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -86,6 +87,22 @@ public class AssigneeDirectoryLookupService {
             return Optional.of(byLoginId);
         }
         return Optional.ofNullable(index.byDisplayName().get(assigneeId));
+    }
+
+    /**
+     * ADDED 2026-10-16 -- everyone in the cached roster who holds the named role (compared ignoring
+     * case), sorted by login id so callers get a stable order. Empty when the role is blank or the
+     * directory could not be read. Used to pick who a new ECWS task goes to.
+     */
+    public List<UserDirectoryDTO> findAllWithRole(final String roleName) {
+        if (roleName == null || roleName.isBlank()) {
+            return List.of();
+        }
+        return loadIndex().byLoginId().values().stream()
+            .filter(u -> u.getRoleNames() != null
+                && u.getRoleNames().stream().anyMatch(r -> r != null && r.trim().equalsIgnoreCase(roleName.trim())))
+            .sorted(java.util.Comparator.comparing(u -> normalizeLoginId(u.getLoginId())))
+            .toList();
     }
 
     private static String normalizeLoginId(final String loginId) {

@@ -10,6 +10,7 @@ import com.dodaso.ecosystem.elcm.entity.pipeline.PackageDocument;
 import com.dodaso.ecosystem.elcm.entity.pipeline.StagedDocument;
 import com.dodaso.ecosystem.elcm.entity.pipeline.Submission;
 import com.dodaso.ecosystem.elcm.entity.pipeline.Workspace;
+import com.dodaso.ecosystem.elcm.integration.ecws.EcwsTaskPublisher;
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpDocumentRoleRepository;
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpPackageStatusRepository;
 import com.dodaso.ecosystem.elcm.repository.lookup.LkpStagedDocumentStatusRepository;
@@ -78,6 +79,8 @@ public class ContractPackageDataService {
     private final LkpSubmissionStatusRepository lkpSubmissionStatusRepository;
     private final LkpStagedDocumentStatusRepository lkpStagedDocumentStatusRepository;
     private final EntityManager entityManager;
+    /** ADDED 2026-10-16: queues and closes ECWS tasks on submit and reassign. */
+    private final EcwsTaskPublisher ecwsTaskPublisher;
 
     /**
      * REVISED 2026-10-15 -- three queries for the whole list, however many packages there are. It used
@@ -244,6 +247,8 @@ public class ContractPackageDataService {
         final ContractPackage pkg = loadDraftPackage(packageId);
         pkg.setAssigneeId(assignee);
         contractPackageRepository.save(pkg);
+        // ADDED 2026-10-16: an open fix task moves to the new assignee.
+        ecwsTaskPublisher.reassigned(packageId, assignee);
     }
 
     /**
@@ -299,6 +304,8 @@ public class ContractPackageDataService {
             link.getStagedDocument().setStatus(submittedDoc);
             stagedDocumentRepository.save(link.getStagedDocument());
         }
+        // ADDED 2026-10-16: the fix task is done once the package is submitted again.
+        ecwsTaskPublisher.resubmitted(packageId, submission.getSubmittedBy());
     }
 
     /**
