@@ -1,19 +1,28 @@
 package com.dodaso.ecosystem.elcm.integration.ecws;
 
+import com.dodaso.ecosystem.common.dto.FileUploadDTO;
 import com.dodaso.ecosystem.elcm.entity.pipeline.ContractPackage;
+import com.dodaso.ecosystem.elcm.entity.pipeline.PackageDocument;
+import com.dodaso.ecosystem.elcm.entity.pipeline.StagedDocument;
 import com.dodaso.ecosystem.elcm.entity.pipeline.Submission;
 import com.dodaso.ecosystem.elcm.repository.pipeline.ContractPackageRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.PackageDocumentRepository;
 import com.dodaso.ecosystem.elcm.repository.pipeline.SubmissionRepository;
 import com.dodaso.ecosystem.elcm.service.pipeline.AssigneeDirectoryLookupService;
+import com.dodaso.ecosystem.elcm.service.pipeline.FileUploadLookupService;
 import com.dodaso.ecosystem.auth.dto.UserDirectoryDTO;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -55,6 +64,7 @@ public class EcwsTaskPublisher {
   private final SubmissionRepository submissionRepository;
   private final PackageDocumentRepository packageDocumentRepository;
   private final AssigneeDirectoryLookupService directory;
+  private final FileUploadLookupService fileUploadLookupService;
 
   /** Extraction finished well: the package is ready for review. */
   @Transactional
@@ -258,6 +268,9 @@ public class EcwsTaskPublisher {
     row.setDescription(cut(description, 500));
     row.setPriority(priority);
     row.setDueDate(dueDateFor(event));
+    if (REVIEW.equals(event) || APPROVAL.equals(event)) {
+      row.setDocumentsText(documentsText(c.packageId));
+    }
     row.setAssigneeLogin(blankToNull(assignee));
     row.setRequestorLogin(blankToNull(requestor));
     row.setTaskOpen(true);
@@ -285,6 +298,109 @@ public class EcwsTaskPublisher {
   }
 
   // ---- small helpers ----
+
+  /**
+   * ADDED 2026-10-16 -- one line per package document, "name TAB link", for ECWS to show as
+   * hyperlinks. The link opens the document in the ELCM viewer (login required) and carries the same
+   * details the dashboard's View button passes, so the viewer's Document panel is filled in. At most
+   * documentLinksMax lines, then a line saying how many more. Null when the list is off, the package
+   * has no documents, or anything fails: the task is then created without the list.
+   */
+  private String documentsText(final Long packageId) {
+    final int max = props.getDocumentLinksMax();
+    if (max <= 0) {
+      return null;
+    }
+    try {
+      final Map<Long, StagedDocument> docs = new LinkedHashMap<>();
+      for (final PackageDocument link : packageDocumentRepository.findDetailedByPackageId(packageId)) {
+        final StagedDocument doc = link.getStagedDocument();
+        if (doc.getFileUploadId() != null) {
+          docs.putIfAbsent(doc.getFileUploadId(), doc);
+        }
+      }
+      if (docs.isEmpty()) {
+        return null;
+      }
+      final Map<Long, FileUploadDTO> files = fileUploadLookupService.findByIds(docs.keySet());
+      final StringBuilder text = new StringBuilder();
+      int number = 0;
+      for (final Map.Entry<Long, StagedDocument> entry : docs.entrySet()) {
+        number++;
+        if (number > max) {
+          text.append("and ").append(docs.size() - max).append(" more, see the package in ELCM\n");
+          break;
+        }
+        final FileUploadDTO file = files.get(entry.getKey());
+        final String name = file == null || file.getFileName() == null ? "document " + entry.getKey()
+            : file.getFileName();
+        text.append(number).append(". ").append(name).append('\t')
+            .append(viewerLink(entry.getValue(), name)).append('\n');
+      }
+      return cut(text.toString(), 4000);
+    } catch (final RuntimeException e) {
+      log.warn("ECWS: could not list the documents of package {}; task created without them",
+          packageId, e);
+      return null;
+    }
+  }
+
+  /** Same query parameters as the dashboard's View button (dashboard.xhtml), same values. */
+  private String viewerLink(final StagedDocument doc, final String fileName) {
+    String base = props.getUiBaseUrl() == null ? "" : props.getUiBaseUrl().trim();
+    while (base.endsWith("/")) {
+      base = base.substring(0, base.length() - 1);
+    }
+    final int dot = fileName.lastIndexOf('.');
+    final String type = dot >= 0 && dot < fileName.length() - 1
+        ? fileName.substring(dot + 1).toUpperCase(java.util.Locale.ROOT) : "";
+    final StringBuilder url = new StringBuilder(base).append("/documentviewer?fileUploadId=")
+        .append(doc.getFileUploadId());
+    if (doc.getTargetRecord() != null) {
+      param(url, "recordId", String.valueOf(doc.getTargetRecord().getId()));
+    }
+    param(url, "fileName", fileName);
+    param(url, "type", type);
+    param(url, "workspace", doc.getWorkspace() == null ? null : doc.getWorkspace().getCode());
+    param(url, "record", recordLabel(doc));
+    param(url, "assignee", assigneeLabel(doc.getAssigneeId()));
+    param(url, "uploadedAt", doc.getUploadedAt() == null ? null
+        : doc.getUploadedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) + " UTC");
+    return url.toString();
+  }
+
+  private static void param(final StringBuilder url, final String name, final String value) {
+    if (value != null && !value.isBlank()) {
+      url.append('&').append(name).append('=').append(encode(value));
+    }
+  }
+
+  /** Same order as the dashboard's Record column (StageDocumentService.deriveRecordLabel). */
+  private static String recordLabel(final StagedDocument doc) {
+    if (doc.getTargetRecord() != null) {
+      return doc.getTargetRecord().getRecordCode();
+    }
+    for (final String candidate : new String[] {doc.getNewRecordName(),
+        doc.getNewRecordCounterparty(), doc.getExistingRecordQuery()}) {
+      if (candidate != null && !candidate.isBlank()) {
+        return candidate;
+      }
+    }
+    return "Unassigned";
+  }
+
+  /** The assignee's display name when the directory knows them, else the stored value. */
+  private String assigneeLabel(final String assigneeId) {
+    if (assigneeId == null || assigneeId.isBlank()) {
+      return "Unassigned";
+    }
+    return directory.findByAssigneeId(assigneeId).map(UserDirectoryDTO::getDisplayName)
+        .filter(name -> name != null && !name.isBlank()).orElse(assigneeId);
+  }
+
+  private static String encode(final String s) {
+    return URLEncoder.encode(s, StandardCharsets.UTF_8).replace("+", "%20");
+  }
 
   /** Due date for a new task of this kind, or null when its setting is 0 or less. */
   private LocalDate dueDateFor(final String event) {

@@ -70,6 +70,10 @@ public class EcwsTaskOutbox {
   @Column(name = "due_date")
   private LocalDate dueDate;
 
+  /** ADDED 2026-10-16: the package's documents as text lines with links; CREATE rows only. */
+  @Column(name = "documents_text", length = 4000)
+  private String documentsText;
+
   @Column(name = "task_open", nullable = false)
   private boolean taskOpen;
 

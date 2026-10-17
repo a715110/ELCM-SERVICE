@@ -90,6 +90,20 @@ public class EcwsIntegrationProperties {
     }
   }
 
+  /**
+   * ADDED 2026-10-16 (document links): most package documents listed in the comments of a Review
+   * or Approval task. 0 or less turns the list off.
+   */
+  private int documentLinksMax = 20;
+
+  public int getDocumentLinksMax() {
+    return documentLinksMax;
+  }
+
+  public void setDocumentLinksMax(final int documentLinksMax) {
+    this.documentLinksMax = documentLinksMax;
+  }
+
   public boolean isEnabled() {
     return enabled;
   }

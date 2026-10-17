@@ -38,6 +38,7 @@ public class EcwsTaskClient {
         request.setAssignedTo(row.getAssigneeLogin());
         request.setRequestor(row.getRequestorLogin());
         request.setPriority(row.getPriority());
+        request.setDocumentsText(row.getDocumentsText());
         request.setDueDate(row.getDueDate() == null ? null : row.getDueDate().toString());
       }
       case EcwsTaskOutbox.CLOSE -> {
