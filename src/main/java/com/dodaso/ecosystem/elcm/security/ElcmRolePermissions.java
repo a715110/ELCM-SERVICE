@@ -72,4 +72,12 @@ public final class ElcmRolePermissions {
     }
     return false;
   }
+
+  /**
+   * ADDED 2026-10-18 -- true when any of the given roles is an administrator role (the roles that
+   * hold every permission). Used by the Task Rail to let administrators see every task.
+   */
+  public static boolean isAdmin(Collection<String> roleNames) {
+    return isGranted(roleNames, ElcmPermission.TEMPLATE_MANAGE);
+  }
 }

@@ -64,4 +64,51 @@ public interface EcwsTaskOutboxRepository extends JpaRepository<EcwsTaskOutbox, 
   /** True when an earlier row of the same package is still waiting or being sent. */
   boolean existsByPackageIdAndIdLessThanAndStatusIn(Long packageId, Long id,
       Collection<String> statuses);
+
+  // ---- ADDED 2026-10-18: reads for the Task Rail ----
+
+  /** Open CREATE rows of the given events, newest first. For administrators: no person filter. */
+  @Query("select o from EcwsTaskOutbox o where o.action = 'CREATE' and o.taskOpen = true"
+      + " and o.eventCode in :events order by o.id desc")
+  List<EcwsTaskOutbox> findOpenForRailAll(@Param("events") Collection<String> events,
+      Pageable page);
+
+  /**
+   * Open CREATE rows that could concern one person: assigned to them, not assigned to anybody, or
+   * on a package they submitted or reviewed. A superset: the exact rule is TaskRailAccess.
+   */
+  @Query("select o from EcwsTaskOutbox o where o.action = 'CREATE' and o.taskOpen = true"
+      + " and o.eventCode in :events and (lower(o.assigneeLogin) = :login"
+      + " or o.assigneeLogin is null or o.packageId in (select s.contractPackage.id from"
+      + " Submission s where lower(s.submittedBy) = :login or lower(s.reviewedBy) = :login))"
+      + " order by o.id desc")
+  List<EcwsTaskOutbox> findOpenForRailPerson(@Param("events") Collection<String> events,
+      @Param("login") String login, Pageable page);
+
+  /** Closed CREATE rows closed since a time, older than a cursor id, newest first. */
+  @Query("select o from EcwsTaskOutbox o where o.action = 'CREATE' and o.taskOpen = false"
+      + " and o.eventCode in :events and o.updatedAt >= :since and o.id < :before"
+      + " order by o.id desc")
+  List<EcwsTaskOutbox> findClosedForRailAll(@Param("events") Collection<String> events,
+      @Param("since") LocalDateTime since, @Param("before") Long before, Pageable page);
+
+  /** Same as findClosedForRailAll, limited to rows that could concern one person. */
+  @Query("select o from EcwsTaskOutbox o where o.action = 'CREATE' and o.taskOpen = false"
+      + " and o.eventCode in :events and o.updatedAt >= :since and o.id < :before"
+      + " and (lower(o.assigneeLogin) = :login or o.packageId in (select s.contractPackage.id"
+      + " from Submission s where lower(s.submittedBy) = :login or lower(s.reviewedBy) = :login))"
+      + " order by o.id desc")
+  List<EcwsTaskOutbox> findClosedForRailPerson(@Param("events") Collection<String> events,
+      @Param("since") LocalDateTime since, @Param("before") Long before,
+      @Param("login") String login, Pageable page);
+
+  /** CLOSE rows of the given packages and events: they say when and how a task was closed. */
+  @Query("select o from EcwsTaskOutbox o where o.action = 'CLOSE'"
+      + " and o.packageId in :packageIds and o.eventCode in :events order by o.id")
+  List<EcwsTaskOutbox> findCloseRows(@Param("packageIds") Collection<Long> packageIds,
+      @Param("events") Collection<String> events);
+
+  /** Open tasks of the given events held by one person (the badge). */
+  long countByActionAndTaskOpenTrueAndEventCodeInAndAssigneeLoginIgnoreCase(String action,
+      Collection<String> events, String assigneeLogin);
 }
