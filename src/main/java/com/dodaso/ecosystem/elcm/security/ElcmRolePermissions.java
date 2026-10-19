@@ -80,4 +80,25 @@ public final class ElcmRolePermissions {
   public static boolean isAdmin(Collection<String> roleNames) {
     return isGranted(roleNames, ElcmPermission.TEMPLATE_MANAGE);
   }
+
+  /**
+   * ADDED 2026-10-18 -- every permission the given roles grant together, in the order of
+   * {@link ElcmPermission}. Used by the Profile page to list what the signed-in user can do.
+   */
+  public static Set<ElcmPermission> grantedTo(Collection<String> roleNames) {
+    Set<ElcmPermission> out = EnumSet.noneOf(ElcmPermission.class);
+    if (roleNames == null) {
+      return out;
+    }
+    for (String role : roleNames) {
+      if (role == null) {
+        continue;
+      }
+      Set<ElcmPermission> granted = BY_ROLE.get(role.trim().toLowerCase(Locale.ROOT));
+      if (granted != null) {
+        out.addAll(granted);
+      }
+    }
+    return out;
+  }
 }
