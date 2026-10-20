@@ -10,6 +10,11 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.function.BooleanSupplier;
 import org.springframework.stereotype.Component;
 
 /**
@@ -22,6 +27,9 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class ExtractorClient {
+
+    /** ADDED 2026-10-18 -- how often a running call asks whether it should be given up. */
+    private static final long CANCEL_CHECK_SECONDS = 3;
 
     private final ExtractionProperties properties;
     private final ObjectMapper objectMapper;
@@ -49,6 +57,17 @@ public class ExtractorClient {
      */
     public ExtractorResult extract(final String templateId, final String templateJson, final String fileName,
                                    final String contentType, final byte[] content) throws ExtractorException {
+        return extract(templateId, templateJson, fileName, contentType, content, () -> false);
+    }
+
+    /**
+     * ADDED 2026-10-18 -- as above, and every few seconds asks cancelled; when it says yes the call
+     * is given up and ExtractorCancelledException is thrown. The extractor container may still
+     * finish the document it was reading; its answer is not used.
+     */
+    public ExtractorResult extract(final String templateId, final String templateJson, final String fileName,
+                                   final String contentType, final byte[] content,
+                                   final BooleanSupplier cancelled) throws ExtractorException {
         final String boundary = "----elcm" + UUID.randomUUID().toString().replace("-", "");
         final byte[] body;
         try {
@@ -62,15 +81,7 @@ public class ExtractorClient {
             .header("Content-Type", "multipart/form-data; boundary=" + boundary)
             .POST(HttpRequest.BodyPublishers.ofByteArray(body))
             .build();
-        final HttpResponse<String> response;
-        try {
-            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        } catch (final InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new ExtractorException("Interrupted while waiting for the extractor", e);
-        } catch (final IOException e) {
-            throw new ExtractorException("The extractor could not be reached or timed out: " + e.getMessage(), e);
-        }
+        final HttpResponse<String> response = send(request, cancelled);
         if (response.statusCode() / 100 != 2) {
             throw new ExtractorException("The extractor answered " + response.statusCode() + ": "
                 + abbreviate(response.body(), 300));
@@ -83,6 +94,33 @@ public class ExtractorClient {
             return result;
         } catch (final IOException e) {
             throw new ExtractorException("The extractor answer could not be read: " + e.getMessage(), e);
+        }
+    }
+
+    /** Sends asynchronously and waits in short steps, so a stop can end the wait. */
+    private HttpResponse<String> send(final HttpRequest request, final BooleanSupplier cancelled)
+        throws ExtractorException {
+        final CompletableFuture<HttpResponse<String>> future =
+            httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        try {
+            while (true) {
+                try {
+                    return future.get(CANCEL_CHECK_SECONDS, TimeUnit.SECONDS);
+                } catch (final TimeoutException waiting) {
+                    if (cancelled.getAsBoolean()) {
+                        future.cancel(true);
+                        throw new ExtractorCancelledException();
+                    }
+                }
+            }
+        } catch (final InterruptedException e) {
+            future.cancel(true);
+            Thread.currentThread().interrupt();
+            throw new ExtractorException("Interrupted while waiting for the extractor", e);
+        } catch (final ExecutionException e) {
+            final Throwable cause = e.getCause() == null ? e : e.getCause();
+            final String why = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
+            throw new ExtractorException("The extractor could not be reached or timed out: " + why, cause);
         }
     }
 

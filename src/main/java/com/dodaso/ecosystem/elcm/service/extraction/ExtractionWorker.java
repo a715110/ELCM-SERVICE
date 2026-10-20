@@ -38,6 +38,8 @@ public class ExtractionWorker {
     private final ExtractorClient extractorClient;
     private final FileUploadLookupService fileUploadLookupService;
     private final RESTServiceClient restServiceClient;
+    /** ADDED 2026-10-18: Pause is read from here. */
+    private final ExtractionControlStore controlStore;
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
 
@@ -61,12 +63,14 @@ public class ExtractionWorker {
     public ExtractionWorker(final ExtractionProperties properties, final ExtractionStore store,
                             final ExtractorClient extractorClient,
                             final FileUploadLookupService fileUploadLookupService,
-                            final RESTServiceClient restServiceClient) {
+                            final RESTServiceClient restServiceClient,
+                            final ExtractionControlStore controlStore) {
         this.properties = properties;
         this.store = store;
         this.extractorClient = extractorClient;
         this.fileUploadLookupService = fileUploadLookupService;
         this.restServiceClient = restServiceClient;
+        this.controlStore = controlStore;
     }
 
     /**
@@ -97,13 +101,13 @@ public class ExtractionWorker {
                 store.recoverStale(properties.getStaleMinutes());
             }
             // REVISED 2026-10-15 -- works through everything queued, then looks once more if a
-            // wake() came in meanwhile.
+            // wake() came in meanwhile. REVISED 2026-10-18: nothing new is taken while paused.
             do {
                 wakeRequested.set(false);
-                Long submissionId = store.claimNext();
+                Long submissionId = controlStore.isPaused() ? null : store.claimNext();
                 while (submissionId != null) {
                     process(submissionId);
-                    submissionId = store.claimNext();
+                    submissionId = controlStore.isPaused() ? null : store.claimNext();
                 }
             } while (wakeRequested.get());
         } catch (final Exception e) {
@@ -126,6 +130,17 @@ public class ExtractionWorker {
                 allOk = false;
             }
             for (final ExtractionStore.JobTicket ticket : prepared.tickets()) {
+                // ADDED 2026-10-18 -- between two documents: was the package stopped, is the agent paused?
+                if (!store.isProcessing(submissionId)) {
+                    log.info("Extraction: submission {} was stopped, leaving it", submissionId);
+                    return;
+                }
+                if (controlStore.isPaused()) {
+                    if (store.releaseToPending(submissionId)) {
+                        log.info("Extraction: paused, submission {} put back in the queue", submissionId);
+                    }
+                    return;
+                }
                 if (!runTicket(submissionId, ticket)) {
                     allOk = false;
                 }
@@ -133,6 +148,10 @@ public class ExtractionWorker {
         } catch (final Exception e) {
             log.error("Extraction: submission {} failed", submissionId, e);
             allOk = false;
+        }
+        if (!store.isProcessing(submissionId)) {
+            log.info("Extraction: submission {} was stopped, leaving it", submissionId);
+            return;
         }
         store.finish(submissionId, allOk);
         log.info("Extraction: submission {} finished, ok={}", submissionId, allOk);
@@ -150,9 +169,15 @@ public class ExtractionWorker {
                 }
                 final byte[] content = download(ticket.fileUploadId());
                 final ExtractorResult result = extractorClient.extract(ticket.extractorTemplateId(),
-                    ticket.templateJson(), file.getFileName(), file.getContentType(), content);
+                    ticket.templateJson(), file.getFileName(), file.getContentType(), content,
+                    () -> stopped(submissionId));
                 store.saveResult(ticket.jobId(), submissionId, result);
                 return true;
+            } catch (final ExtractorCancelledException e) {
+                // ADDED 2026-10-18 -- the package was stopped while the extractor was reading.
+                store.requeueRunningJob(ticket.jobId());
+                log.info("Extraction: job {} cancelled, submission {} was stopped", ticket.jobId(), submissionId);
+                return false;
             } catch (final Exception e) {
                 lastError = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
                 log.warn("Extraction: job {} attempt {} failed: {}", ticket.jobId(), attempt, lastError);
@@ -163,6 +188,15 @@ public class ExtractionWorker {
         }
         store.markFailed(ticket.jobId(), submissionId, lastError);
         return false;
+    }
+
+    /** ADDED 2026-10-18 -- asked every few seconds during an extractor call; a failed check means no. */
+    private boolean stopped(final Long submissionId) {
+        try {
+            return !store.isProcessing(submissionId);
+        } catch (final RuntimeException e) {
+            return false;
+        }
     }
 
     private byte[] download(final Long fileUploadId) throws Exception {

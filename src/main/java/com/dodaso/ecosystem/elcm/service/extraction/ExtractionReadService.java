@@ -43,6 +43,8 @@ public class ExtractionReadService {
     private final ExtractionJobRepository jobRepository;
     private final ExtractionFieldResultRepository resultRepository;
     private final ExtractionTemplateRepository templateRepository;
+    /** ADDED 2026-10-18: who stopped a package, and whether the agent is paused. */
+    private final ExtractionControlStore controlStore;
 
     /** Job status shown for a document that is not read because it has no extraction template. */
     public static final String JOB_SKIPPED = "SKIPPED";
@@ -124,7 +126,10 @@ public class ExtractionReadService {
             case ExtractionStore.SUBMISSION_PENDING -> {
                 state = "QUEUED";
                 position = queuePosition(submission);
-                message = position <= 1 ? "Waiting to start." : "Waiting in line (" + (position - 1) + " ahead).";
+                // REVISED 2026-10-18: say so when the wait is because the agent is paused.
+                message = controlStore.isPaused()
+                    ? "Waiting. Extraction is paused by an administrator."
+                    : position <= 1 ? "Waiting to start." : "Waiting in line (" + (position - 1) + " ahead).";
             }
             case ExtractionStore.SUBMISSION_PROCESSING -> {
                 state = "RUNNING";
@@ -150,6 +155,13 @@ public class ExtractionReadService {
                 state = "APPLIED";
                 final var target = submission.getContractPackage().getTargetRecord();
                 message = "Applied to contract record " + (target == null ? "" : target.getRecordCode()) + ".";
+            }
+            case ExtractionStore.SUBMISSION_STOPPED -> {
+                state = "STOPPED";
+                final String[] stop = controlStore.latestStop(submission.getId()).orElse(null);
+                message = "Stopped by " + (stop == null || stop[0] == null ? "an administrator" : stop[0])
+                    + (stop == null || stop[1] == null ? "." : ": " + stop[1])
+                    + " Retry to run it again; finished documents are kept.";
             }
             case ExtractionStore.SUBMISSION_FAILED -> {
                 state = "FAILED";

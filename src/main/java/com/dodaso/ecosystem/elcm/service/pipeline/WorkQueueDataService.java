@@ -28,6 +28,8 @@ public class WorkQueueDataService {
   static final String APPROVAL = "APPROVAL";
   static final String FAILED = "FAILED";
   static final String APPLIED = "APPLIED";
+  /** ADDED 2026-10-18: an administrator stopped the extraction. */
+  static final String STOPPED = "STOPPED";
 
   private final SubmissionRepository submissionRepository;
   private final PackageDocumentRepository packageDocumentRepository;
@@ -74,6 +76,7 @@ public class WorkQueueDataService {
       case "EXTRACTED" -> REVIEW;
       case "REVIEWED" -> APPROVAL;
       case "FAILED" -> FAILED;
+      case "STOPPED" -> STOPPED;
       case "APPLIED" -> APPLIED;
       default -> null;
     };
@@ -85,6 +88,7 @@ public class WorkQueueDataService {
       case REVIEW -> "Ready for review";
       case APPROVAL -> "Awaiting approval";
       case FAILED -> "Failed";
+      case STOPPED -> "Stopped";
       case APPLIED -> "Applied";
       default -> stage;
     };

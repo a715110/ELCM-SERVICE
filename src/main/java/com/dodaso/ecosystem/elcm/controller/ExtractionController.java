@@ -5,6 +5,8 @@ import com.dodaso.ecosystem.elcm.security.ElcmPermission;
 import com.dodaso.ecosystem.elcm.security.RequiresPermission;
 import com.dodaso.ecosystem.elcm.service.extraction.ApplyRequest;
 import com.dodaso.ecosystem.elcm.service.extraction.ApplyResult;
+import com.dodaso.ecosystem.elcm.service.extraction.ControlRequest;
+import com.dodaso.ecosystem.elcm.service.extraction.ExtractionControlService;
 import com.dodaso.ecosystem.elcm.service.extraction.TargetCandidate;
 import com.dodaso.ecosystem.elcm.service.extraction.ExtractionCoverage;
 import com.dodaso.ecosystem.elcm.service.extraction.ReviewAccess;
@@ -47,6 +49,8 @@ public class ExtractionController {
   private final ExtractionService extractionService;
   private final CallerIdentityResolver callerIdentityResolver;
   private final ReviewAccessService reviewAccessService;
+  /** ADDED 2026-10-18: Stop. */
+  private final ExtractionControlService controlService;
 
   /**
    * Progress: state, queue position, per-document status and elapsed time.
@@ -104,6 +108,20 @@ public class ExtractionController {
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void retry(@PathVariable final Long id) {
     extractionService.retry(id);
+  }
+
+  /**
+   * ADDED 2026-10-18 -- administrator: stops a queued or running extraction, with a reason that is
+   * kept in the control log. Retry runs it again. 204; 400 no reason, 404 no submission, 409 not
+   * queued or running.
+   */
+  @PostMapping("/stop")
+  @RequiresPermission(ElcmPermission.TEMPLATE_MANAGE)
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void stop(@PathVariable final Long id, @RequestBody final ControlRequest request,
+      final HttpServletRequest httpRequest) {
+    controlService.stop(id, callerIdentityResolver.loginIdOf(httpRequest),
+        request == null ? null : request.reason());
   }
 
   /**

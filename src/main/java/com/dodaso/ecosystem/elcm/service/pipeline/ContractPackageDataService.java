@@ -150,6 +150,7 @@ public class ContractPackageDataService {
             case ExtractionStore.SUBMISSION_PROCESSING -> "RUNNING";
             case ExtractionStore.SUBMISSION_EXTRACTED -> "DONE";
             case ExtractionStore.SUBMISSION_FAILED -> "FAILED";
+            case ExtractionStore.SUBMISSION_STOPPED -> "STOPPED";
             case ReviewStore.SUBMISSION_DECLINED -> "DECLINED";
             case ReviewStore.SUBMISSION_REVIEWED -> "REVIEWED";
             case ApplyStore.SUBMISSION_APPLIED -> "APPLIED";

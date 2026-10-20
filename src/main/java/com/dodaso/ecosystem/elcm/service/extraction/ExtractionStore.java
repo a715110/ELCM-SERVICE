@@ -57,6 +57,8 @@ public class ExtractionStore {
     public static final String SUBMISSION_PROCESSING = "PROCESSING";
     public static final String SUBMISSION_EXTRACTED = "EXTRACTED";
     public static final String SUBMISSION_FAILED = "FAILED";
+    /** ADDED 2026-10-18 -- an administrator stopped the extraction; Retry puts it back in the queue. */
+    public static final String SUBMISSION_STOPPED = "STOPPED";
     public static final String JOB_QUEUED = "QUEUED";
     public static final String JOB_RUNNING = "RUNNING";
     public static final String JOB_COMPLETED = "COMPLETED";
@@ -76,6 +78,8 @@ public class ExtractionStore {
     private final ExtractionFieldResultRepository resultRepository;
     /** ADDED 2026-10-16: queues ECWS tasks for ready and failed extractions. */
     private final EcwsTaskPublisher ecwsTaskPublisher;
+    /** ADDED 2026-10-18: the Stop log. */
+    private final ExtractionControlStore controlStore;
 
     /**
      * One document to extract: what the worker needs, with no entity attached. REVISED 2026-10-15:
@@ -261,12 +265,16 @@ public class ExtractionStore {
         submissionRepository.touch(submissionId, now());
     }
 
-    /** Ends the submission: EXTRACTED when nothing failed and at least one document ran, else FAILED. */
+    /**
+     * Ends the submission: EXTRACTED when nothing failed and at least one document ran, else FAILED.
+     * REVISED 2026-10-18: only from PROCESSING, so a submission that was stopped (or put back in the
+     * queue) while its last document was being read is not moved on.
+     */
     @Transactional
     public void finish(final Long submissionId, final boolean allOk) {
         final Submission s = submissionRepository.findById(submissionId).orElseThrow();
         // REVISED 2026-10-16: queue the ECWS task only when this call really moved the submission.
-        final int moved = submissionRepository.moveStatus(submissionId, s.getStatus(),
+        final int moved = submissionRepository.moveStatus(submissionId, submissionStatus(SUBMISSION_PROCESSING),
             submissionStatus(allOk ? SUBMISSION_EXTRACTED : SUBMISSION_FAILED), now());
         if (moved == 1) {
             final Long packageId = s.getContractPackage().getId();
@@ -278,7 +286,71 @@ public class ExtractionStore {
         }
     }
 
-    /** Retry: FAILED back to PENDING. 404 unknown package, 409 when the newest submission is not FAILED. */
+    /** ADDED 2026-10-18 -- is the submission still being read? False once it was stopped or put back. */
+    @Transactional(readOnly = true)
+    public boolean isProcessing(final Long submissionId) {
+        return submissionRepository.findById(submissionId)
+            .map(s -> SUBMISSION_PROCESSING.equals(s.getStatus().getCode()))
+            .orElse(false);
+    }
+
+    /**
+     * ADDED 2026-10-18 -- Pause: puts a submission the worker holds back to PENDING, between two
+     * documents. The finished documents keep their results and are not read again. Returns true
+     * when this call moved it.
+     */
+    @Transactional
+    public boolean releaseToPending(final Long submissionId) {
+        return submissionRepository.moveStatus(submissionId, submissionStatus(SUBMISSION_PROCESSING),
+            submissionStatus(SUBMISSION_PENDING), now()) == 1;
+    }
+
+    /** ADDED 2026-10-18 -- a document whose extractor call was cancelled goes back to QUEUED. */
+    @Transactional
+    public void requeueRunningJob(final Long jobId) {
+        final ExtractionJob job = jobRepository.findById(jobId).orElseThrow();
+        if (JOB_RUNNING.equals(job.getStatus().getCode())) {
+            job.setStatus(jobStatus(JOB_QUEUED));
+            jobRepository.save(job);
+        }
+    }
+
+    /**
+     * ADDED 2026-10-18 -- Stop: an administrator ends the extraction of one package. The newest
+     * submission must be PENDING or PROCESSING; it becomes STOPPED, a running document goes back to
+     * QUEUED, and who and why are written to the control log. Documents that already finished keep
+     * their results. 404 no submission, 400 no reason, 409 not queued or running.
+     */
+    @Transactional
+    public void stop(final Long packageId, final String actor, final String reason) {
+        final String text = ExtractionControlStore.requireReason(reason);
+        final List<Submission> all = submissionRepository.findByContractPackage_Id(packageId);
+        if (all.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "The package has no submission");
+        }
+        final Submission newest = all.stream().max(java.util.Comparator.comparing(Submission::getId)).orElseThrow();
+        final String code = newest.getStatus().getCode();
+        if (!SUBMISSION_PENDING.equals(code) && !SUBMISSION_PROCESSING.equals(code)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Only a queued or running extraction can be stopped");
+        }
+        if (submissionRepository.moveStatus(newest.getId(), newest.getStatus(),
+            submissionStatus(SUBMISSION_STOPPED), now()) != 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "The extraction changed while it was being stopped. Please look again.");
+        }
+        final Set<Long> docIds = documentIds(packageId);
+        if (!docIds.isEmpty()) {
+            jobRepository.requeueRunning(jobStatus(JOB_QUEUED), jobStatus(JOB_RUNNING), docIds);
+        }
+        controlStore.logStop(packageId, newest.getId(), actor, text);
+        log.info("Extraction of package {} (submission {}) stopped by {}: {}", packageId, newest.getId(), actor, text);
+    }
+
+    /**
+     * Retry: FAILED or STOPPED back to PENDING. 404 unknown package, 409 when the newest submission
+     * is neither. REVISED 2026-10-18: a stopped extraction can be retried too.
+     */
     @Transactional
     public void requeueFailed(final Long packageId) {
         final List<Submission> all = submissionRepository.findByContractPackage_Id(packageId);
@@ -286,13 +358,17 @@ public class ExtractionStore {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "The package has no submission");
         }
         final Submission newest = all.stream().max(java.util.Comparator.comparing(Submission::getId)).orElseThrow();
-        if (!SUBMISSION_FAILED.equals(newest.getStatus().getCode())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only a failed extraction can be retried");
+        final boolean wasFailed = SUBMISSION_FAILED.equals(newest.getStatus().getCode());
+        if (!wasFailed && !SUBMISSION_STOPPED.equals(newest.getStatus().getCode())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Only a failed or stopped extraction can be retried");
         }
         submissionRepository.moveStatus(newest.getId(), newest.getStatus(),
             submissionStatus(SUBMISSION_PENDING), now());
-        // ADDED 2026-10-16: the failure task is done once a retry starts.
-        ecwsTaskPublisher.retried(packageId);
+        // ADDED 2026-10-16: the failure task is done once a retry starts. A stop made no task.
+        if (wasFailed) {
+            ecwsTaskPublisher.retried(packageId);
+        }
     }
 
     private Set<Long> documentIds(final Long packageId) {
