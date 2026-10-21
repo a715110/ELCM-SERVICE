@@ -286,6 +286,13 @@ public class ExtractionStore {
         }
     }
 
+    /** ADDED 2026-10-20 -- the package a submission belongs to (for the Activity Log). */
+    @Transactional(readOnly = true)
+    public Long packageIdOf(final Long submissionId) {
+        return submissionRepository.findById(submissionId)
+            .map(s -> s.getContractPackage().getId()).orElse(null);
+    }
+
     /** ADDED 2026-10-18 -- is the submission still being read? False once it was stopped or put back. */
     @Transactional(readOnly = true)
     public boolean isProcessing(final Long submissionId) {

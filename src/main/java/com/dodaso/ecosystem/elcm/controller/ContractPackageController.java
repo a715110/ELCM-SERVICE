@@ -1,5 +1,7 @@
 package com.dodaso.ecosystem.elcm.controller;
 
+import com.dodaso.ecosystem.elcm.activity.ActivityPage;
+import com.dodaso.ecosystem.elcm.activity.ActivityReadService;
 import com.dodaso.ecosystem.elcm.security.CallerIdentityResolver;
 import com.dodaso.ecosystem.elcm.security.ElcmPermission;
 import com.dodaso.ecosystem.elcm.security.RequiresPermission;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -42,6 +45,8 @@ public class ContractPackageController {
 
     private final ContractPackageService contractPackageService;
     private final CallerIdentityResolver callerIdentityResolver;
+    /** ADDED 2026-10-20: the package Activity Log, read back from EARS. */
+    private final ActivityReadService activityReadService;
 
     @GetMapping
     @RequiresPermission(ElcmPermission.PIPELINE_VIEW)
@@ -61,6 +66,18 @@ public class ContractPackageController {
     @RequiresPermission(ElcmPermission.PIPELINE_VIEW)
     public List<PackageDocumentRow> getPackageDocuments(@PathVariable final Long id) {
         return contractPackageService.findPackageDocuments(id);
+    }
+
+    /**
+     * ADDED 2026-10-20 -- the Activity Log of one package, newest first, a page at a time (pages
+     * start at 0, size 1 to 200, default 50). 502 when EARS cannot be reached.
+     */
+    @GetMapping("/{id}/activity")
+    @RequiresPermission(ElcmPermission.PIPELINE_VIEW)
+    public ActivityPage getActivity(@PathVariable final Long id,
+                                    @RequestParam(required = false) final Integer page,
+                                    @RequestParam(required = false) final Integer size) {
+        return activityReadService.find(id, page, size);
     }
 
     /** Creates a package, in ASSEMBLY, from the given staged documents. */

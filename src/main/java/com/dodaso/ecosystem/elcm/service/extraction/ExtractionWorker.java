@@ -3,6 +3,8 @@ package com.dodaso.ecosystem.elcm.service.extraction;
 import com.dodaso.ecosystem.baseline.common.constant.ServiceDiscoveryEnum;
 import com.dodaso.ecosystem.baseline.common.proxy.RESTServiceClient;
 import com.dodaso.ecosystem.common.dto.FileUploadDTO;
+import com.dodaso.ecosystem.elcm.activity.ActivityEvent;
+import com.dodaso.ecosystem.elcm.activity.ActivityRecorder;
 import com.dodaso.ecosystem.elcm.service.pipeline.FileUploadLookupService;
 import java.util.Map;
 import java.util.Set;
@@ -40,6 +42,8 @@ public class ExtractionWorker {
     private final RESTServiceClient restServiceClient;
     /** ADDED 2026-10-18: Pause is read from here. */
     private final ExtractionControlStore controlStore;
+    /** ADDED 2026-10-20: the package Activity Log. */
+    private final ActivityRecorder activityRecorder;
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
 
@@ -64,13 +68,15 @@ public class ExtractionWorker {
                             final ExtractorClient extractorClient,
                             final FileUploadLookupService fileUploadLookupService,
                             final RESTServiceClient restServiceClient,
-                            final ExtractionControlStore controlStore) {
+                            final ExtractionControlStore controlStore,
+                            final ActivityRecorder activityRecorder) {
         this.properties = properties;
         this.store = store;
         this.extractorClient = extractorClient;
         this.fileUploadLookupService = fileUploadLookupService;
         this.restServiceClient = restServiceClient;
         this.controlStore = controlStore;
+        this.activityRecorder = activityRecorder;
     }
 
     /**
@@ -123,6 +129,9 @@ public class ExtractionWorker {
         boolean allOk = true;
         try {
             final ExtractionStore.Prepared prepared = store.prepareJobs(submissionId);
+            // ADDED 2026-10-20 -- Activity Log
+            record(submissionId, ActivityEvent.EXTRACTION_STARTED, "Extraction started on "
+                + (prepared.tickets().size() + prepared.alreadyCompleted()) + " document(s).");
             if (prepared.tickets().isEmpty() && prepared.alreadyCompleted() == 0) {
                 // No document has an active template with an extractor id: a configuration
                 // problem, not a success. prepareJobs logged which documents were skipped.
@@ -155,6 +164,10 @@ public class ExtractionWorker {
         }
         store.finish(submissionId, allOk);
         log.info("Extraction: submission {} finished, ok={}", submissionId, allOk);
+        // ADDED 2026-10-20 -- Activity Log
+        record(submissionId, allOk ? ActivityEvent.EXTRACTION_COMPLETED : ActivityEvent.EXTRACTION_FAILED,
+            allOk ? "Extraction finished. The package is ready for review."
+                : "Extraction failed for at least one document. Failed documents can be retried.");
     }
 
     private boolean runTicket(final Long submissionId, final ExtractionStore.JobTicket ticket) {
@@ -188,6 +201,15 @@ public class ExtractionWorker {
         }
         store.markFailed(ticket.jobId(), submissionId, lastError);
         return false;
+    }
+
+    /** ADDED 2026-10-20 -- one Activity Log line for the package of a submission. Never throws. */
+    private void record(final Long submissionId, final ActivityEvent event, final String message) {
+        try {
+            activityRecorder.recordSystem(store.packageIdOf(submissionId), event, message);
+        } catch (final RuntimeException e) {
+            log.warn("ACTIVITY-LOG could not note {} for submission {}: {}", event, submissionId, e.getMessage());
+        }
     }
 
     /** ADDED 2026-10-18 -- asked every few seconds during an extractor call; a failed check means no. */

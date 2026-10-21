@@ -1,5 +1,7 @@
 package com.dodaso.ecosystem.elcm.service.extraction;
 
+import com.dodaso.ecosystem.elcm.activity.ActivityEvent;
+import com.dodaso.ecosystem.elcm.activity.ActivityRecorder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -14,6 +16,8 @@ public class ExtractionControlService {
   private final ExtractionControlStore controlStore;
   private final ExtractionStore store;
   private final ExtractionWorker worker;
+  /** ADDED 2026-10-20: the package Activity Log. */
+  private final ActivityRecorder activityRecorder;
 
   /** Paused or not, the counts and the latest events. */
   public ControlState state() {
@@ -42,5 +46,7 @@ public class ExtractionControlService {
    */
   public void stop(final Long packageId, final String actor, final String reason) {
     store.stop(packageId, actor, reason);
+    activityRecorder.record(packageId, ActivityEvent.EXTRACTION_STOPPED, actor,
+        "Extraction was stopped." + (reason != null && !reason.isBlank() ? " Reason: " + reason.trim() : ""));
   }
 }

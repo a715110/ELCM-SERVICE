@@ -1,6 +1,9 @@
 package com.dodaso.ecosystem.elcm.service.extraction;
 
 import com.dodaso.ecosystem.common.dto.FileUploadDTO;
+import com.dodaso.ecosystem.elcm.activity.ActivityEvent;
+import com.dodaso.ecosystem.elcm.activity.ActivityRecorder;
+import com.dodaso.ecosystem.elcm.service.pipeline.ContractPackageService;
 import com.dodaso.ecosystem.elcm.service.pipeline.FileUploadLookupService;
 import java.util.HashSet;
 import java.util.List;
@@ -24,6 +27,9 @@ public class ExtractionService {
     private final ApplyStore applyStore;
     private final FileUploadLookupService fileUploadLookupService;
     private final ExtractionWorker worker;
+    /** ADDED 2026-10-20: the package Activity Log (best effort, after the work is committed). */
+    private final ActivityRecorder activityRecorder;
+    private final ContractPackageService contractPackageService;
 
     public ExtractionStatus status(final Long packageId) {
         final ExtractionStatus status = readService.status(packageId);
@@ -68,12 +74,28 @@ public class ExtractionService {
     public void retry(final Long packageId) {
         store.requeueFailed(packageId);
         worker.wake(); // ADDED 2026-10-15 -- start now instead of at the next scheduled poll
+        activityRecorder.record(packageId, ActivityEvent.EXTRACTION_RETRIED,
+            "Extraction was queued to run again.");
     }
 
     /** Reviewer: correct and/or confirm one field. */
     public void saveField(final Long packageId, final Long resultId, final String correctedValue,
                           final boolean verified, final String reason, final String caller) {
         reviewStore.saveField(packageId, resultId, correctedValue, verified, reason, caller);
+        // ADDED 2026-10-20 -- Activity Log. The field name is looked up later, off the request.
+        final boolean corrected = correctedValue != null && !correctedValue.isBlank();
+        activityRecorder.recordLater(packageId, ActivityEvent.FIELD_SAVED, () -> {
+            String label = "A field";
+            try {
+                label = "Field \"" + reviewStore.history(packageId, resultId).label() + "\"";
+            } catch (final RuntimeException e) {
+                // keep the neutral wording
+            }
+            final String what = (corrected ? "value corrected" : "value left as read")
+                + (verified ? ", confirmed" : ", not confirmed");
+            return label + ": " + what
+                + (reason != null && !reason.isBlank() ? ". Reason: " + reason.trim() : ".");
+        });
     }
 
     /** Reviewer: send one document back to be read again, with a reason. */
@@ -81,16 +103,25 @@ public class ExtractionService {
                           final String caller) {
         reviewStore.reprocess(packageId, stagedDocumentId, reason, caller);
         worker.wake(); // ADDED 2026-10-15 -- start now instead of at the next scheduled poll
+        activityRecorder.recordLater(packageId, ActivityEvent.DOCUMENT_REPROCESSED,
+            () -> contractPackageService.namesOf(packageId, Set.of(stagedDocumentId))
+                + " was sent to be read again."
+                + (reason != null && !reason.isBlank() ? " Reason: " + reason.trim() : ""));
     }
 
     /** Reviewer: confirm every field the extractor verified. Returns how many were confirmed. */
     public int confirmVerified(final Long packageId, final String caller) {
-        return reviewStore.confirmVerified(packageId, caller);
+        final int confirmed = reviewStore.confirmVerified(packageId, caller);
+        activityRecorder.record(packageId, ActivityEvent.FIELDS_CONFIRMED, caller,
+            confirmed + " verified field" + (confirmed == 1 ? " was" : "s were") + " confirmed.");
+        return confirmed;
     }
 
     /** Reviewer: complete the review (422 while critical or flagged fields are unconfirmed). */
     public void completeReview(final Long packageId, final String caller) {
         reviewStore.complete(packageId, caller);
+        activityRecorder.record(packageId, ActivityEvent.REVIEW_COMPLETED, caller,
+            "The review was completed.");
     }
 
     /** What the reviewer did to one field, oldest first. */
@@ -100,7 +131,12 @@ public class ExtractionService {
 
     /** Reviewer: write the reviewed values to the package's target contract record. */
     public ApplyResult apply(final Long packageId, final Long targetRecordId, final String caller) {
-        return applyStore.apply(packageId, targetRecordId, caller);
+        final ApplyResult result = applyStore.apply(packageId, targetRecordId, caller);
+        activityRecorder.record(packageId, ActivityEvent.VALUES_APPLIED, caller,
+            "Reviewed values were applied to contract record "
+                + (result.recordCode() != null ? result.recordCode() : "") + ": "
+                + result.written() + " written, " + result.unchanged() + " unchanged.");
+        return result;
     }
 
     /** Reviewer: the records a package without a target can be applied to. */
@@ -111,11 +147,16 @@ public class ExtractionService {
     /** Reviewer: reopen a completed review so values can be changed again. */
     public void reopenReview(final Long packageId, final String caller) {
         reviewStore.reopen(packageId, caller);
+        activityRecorder.record(packageId, ActivityEvent.REVIEW_REOPENED, caller,
+            "The completed review was reopened.");
     }
 
     /** Approver: send a completed review back to the reviewer, with a reason. */
     public void sendBack(final Long packageId, final String reason, final String caller) {
         reviewStore.sendBack(packageId, reason, caller);
+        activityRecorder.record(packageId, ActivityEvent.SENT_BACK, caller,
+            "The review was sent back to the reviewer."
+                + (reason != null && !reason.isBlank() ? " Reason: " + reason.trim() : ""));
     }
 
     /** The reasons the package's review was sent back, newest first. */
@@ -131,6 +172,9 @@ public class ExtractionService {
     /** Reviewer: decline the package back to Assembly with a reason. */
     public void decline(final Long packageId, final String reason, final String caller) {
         reviewStore.decline(packageId, reason, caller);
+        activityRecorder.record(packageId, ActivityEvent.PACKAGE_DECLINED, caller,
+            "The package was declined back to Assembly."
+                + (reason != null && !reason.isBlank() ? " Reason: " + reason.trim() : ""));
     }
 
     private static Set<Long> idsOf(final List<Long> ids) {
