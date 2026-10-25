@@ -17,4 +17,13 @@ public class TaskRailPage {
 
   private List<TaskRailItem> items = new ArrayList<>();
   private Long nextBefore;
+
+  /** ADDED 2026-10-25, Open list: how many open tasks the caller may see in all. */
+  private Integer total;
+
+  /** ADDED 2026-10-25, Open list: where the next page starts; null means there is no more. */
+  private Integer nextOffset;
+
+  /** ADDED 2026-10-25: whether the caller may use the All view (reviewer, approver, admin). */
+  private boolean canSeeAll;
 }

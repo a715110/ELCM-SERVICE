@@ -67,9 +67,14 @@ public interface EcwsTaskOutboxRepository extends JpaRepository<EcwsTaskOutbox, 
 
   // ---- ADDED 2026-10-18: reads for the Task Rail ----
 
-  /** Open CREATE rows of the given events, newest first. For administrators: no person filter. */
+  /**
+   * Open CREATE rows of the given events, overdue first, then by due date, tasks without a due date
+   * last (REVISED 2026-10-25: sorted in the database so paging can cut after the sort). For
+   * administrators: no person filter.
+   */
   @Query("select o from EcwsTaskOutbox o where o.action = 'CREATE' and o.taskOpen = true"
-      + " and o.eventCode in :events order by o.id desc")
+      + " and o.eventCode in :events order by case when o.dueDate is null then 1 else 0 end,"
+      + " o.dueDate, o.id desc")
   List<EcwsTaskOutbox> findOpenForRailAll(@Param("events") Collection<String> events,
       Pageable page);
 
@@ -81,7 +86,7 @@ public interface EcwsTaskOutboxRepository extends JpaRepository<EcwsTaskOutbox, 
       + " and o.eventCode in :events and (lower(o.assigneeLogin) = :login"
       + " or o.assigneeLogin is null or o.packageId in (select s.contractPackage.id from"
       + " Submission s where lower(s.submittedBy) = :login or lower(s.reviewedBy) = :login))"
-      + " order by o.id desc")
+      + " order by case when o.dueDate is null then 1 else 0 end, o.dueDate, o.id desc")
   List<EcwsTaskOutbox> findOpenForRailPerson(@Param("events") Collection<String> events,
       @Param("login") String login, Pageable page);
 

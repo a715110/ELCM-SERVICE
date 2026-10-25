@@ -32,7 +32,7 @@ public class TaskRailService {
   public static final int CLOSED_PAGE = 20;
 
   /** Most lines in the Open list. */
-  static final int OPEN_MAX = 50;
+  static final int OPEN_PAGE = 20; // REVISED 2026-10-25: was OPEN_MAX = 50, a silent cap
 
   private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
@@ -40,18 +40,31 @@ public class TaskRailService {
   private final EcwsIntegrationProperties props;
   private final AssigneeDirectoryLookupService directory;
 
-  /** Open tasks, overdue first, then by due date; tasks without a due date last. */
-  public TaskRailPage open(final TaskRailAccess.Caller caller, final boolean mineOnly) {
-    final List<TaskRailDataService.Seen> seen = dataService.open(caller, mineOnly);
+  /**
+   * REVISED 2026-10-25: one page of open tasks, overdue first, then by due date; tasks without a
+   * due date last. The sort is done before the page is cut, so an old overdue task is never left
+   * out. offset is how many lines the caller already has. A caller who has no reviewer, approver
+   * or admin role is always treated as "mine", whatever was asked.
+   */
+  public TaskRailPage open(final TaskRailAccess.Caller caller, final boolean mine,
+      final Integer offset) {
+    final boolean mineOnly = mine || !canSeeAll(caller);
+    final int from = offset == null ? 0 : Math.max(0, offset);
+    final TaskRailDataService.OpenPage read = dataService.open(caller, mineOnly, from, OPEN_PAGE);
     final Map<String, String> names = new HashMap<>();
     final TaskRailPage page = new TaskRailPage();
     final LocalDate today = LocalDate.now(ZoneOffset.UTC);
-    seen.stream()
-        .map(s -> toItem(s, names, today))
-        .sorted((a, b) -> compareOpen(a, b))
-        .limit(OPEN_MAX)
-        .forEach(page.getItems()::add);
+    read.items().forEach(s -> page.getItems().add(toItem(s, names, today)));
+    page.setTotal(read.total());
+    page.setNextOffset(from + read.items().size() < read.total()
+        ? from + read.items().size() : null);
+    page.setCanSeeAll(canSeeAll(caller));
     return page;
+  }
+
+  /** Reviewers, approvers and administrators may switch between Mine and All. */
+  static boolean canSeeAll(final TaskRailAccess.Caller caller) {
+    return caller.admin() || caller.hasReviewerRole() || caller.hasApproverRole();
   }
 
   /** One page of closed tasks, newest first. before is the cursor from the previous page. */

@@ -34,12 +34,15 @@ public class TaskRailController {
   private final CallerIdentityResolver callerIdentityResolver;
   private final CallerRoleService callerRoleService;
 
-  /** Open tasks. mine=true keeps only the ones that are the caller's own. */
+  /**
+   * Open tasks, 20 at a time (REVISED 2026-10-25). mine=true keeps only the ones that are the
+   * caller's own; offset is how many lines the panel already shows.
+   */
   @GetMapping("/open")
   @RequiresPermission(ElcmPermission.PIPELINE_VIEW)
   public TaskRailPage open(@RequestParam(defaultValue = "false") final boolean mine,
-      final HttpServletRequest request) {
-    return taskRailService.open(caller(request), mine);
+      @RequestParam(required = false) final Integer offset, final HttpServletRequest request) {
+    return taskRailService.open(caller(request), mine, offset);
   }
 
   /** One page of closed tasks of the last 30 days; before is the cursor of the previous page. */

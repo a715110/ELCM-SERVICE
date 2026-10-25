@@ -30,8 +30,12 @@ public class TaskRailDataService {
 
   static final List<String> EVENTS = List.of(EcwsTaskPublisher.REVIEW, EcwsTaskPublisher.APPROVAL);
 
-  /** Most open tasks read for one person. Open tasks are few, this is only a safety stop. */
-  static final int OPEN_LIMIT = 200;
+  /**
+   * REVISED 2026-10-25: safety stop on the rows read for one person. The rows come sorted (overdue
+   * first, then by due date), so if this were ever reached, only the furthest-away tasks would be
+   * left out. It no longer decides which tasks appear first.
+   */
+  static final int OPEN_LIMIT = 2000;
 
   /** Rows read per round when filling a page of closed tasks, and how many rounds at most. */
   static final int CLOSED_BATCH = 60;
@@ -45,17 +49,25 @@ public class TaskRailDataService {
                      String outcome) {
   }
 
+  /** REVISED 2026-10-25: one page of open tasks and how many open tasks the caller may see. */
+  public record OpenPage(List<Seen> items, int total) {
+  }
+
   /** A page of closed tasks and the cursor for the next page (null when there is no more). */
   public record ClosedPage(List<Seen> items, Long nextBefore) {
   }
 
   @Transactional(readOnly = true)
-  public List<Seen> open(final TaskRailAccess.Caller caller, final boolean mineOnly) {
+  public OpenPage open(final TaskRailAccess.Caller caller, final boolean mineOnly,
+      final int offset, final int size) {
     final List<EcwsTaskOutbox> rows = caller.admin()
         ? outbox.findOpenForRailAll(EVENTS, PageRequest.of(0, OPEN_LIMIT))
         : outbox.findOpenForRailPerson(EVENTS, key(caller.login()),
             PageRequest.of(0, OPEN_LIMIT));
-    return filter(caller, true, mineOnly, rows);
+    final List<Seen> all = filter(caller, true, mineOnly, rows);
+    final int from = Math.min(Math.max(0, offset), all.size());
+    final int to = Math.min(all.size(), from + Math.max(1, size));
+    return new OpenPage(new ArrayList<>(all.subList(from, to)), all.size());
   }
 
   @Transactional(readOnly = true)
