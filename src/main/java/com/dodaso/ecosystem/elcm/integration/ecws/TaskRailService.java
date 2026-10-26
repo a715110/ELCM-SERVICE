@@ -63,7 +63,7 @@ public class TaskRailService {
   }
 
   /** Reviewers, approvers and administrators may switch between Mine and All. */
-  static boolean canSeeAll(final TaskRailAccess.Caller caller) {
+  public static boolean canSeeAll(final TaskRailAccess.Caller caller) {
     return caller.admin() || caller.hasReviewerRole() || caller.hasApproverRole();
   }
 
