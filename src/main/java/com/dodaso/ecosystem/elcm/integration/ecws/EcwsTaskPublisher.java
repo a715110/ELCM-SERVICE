@@ -81,7 +81,7 @@ public class EcwsTaskPublisher {
     final long documents = packageDocumentRepository.countByContractPackage_Id(packageId);
     create(c, REVIEW, "Review package " + c.code, MEDIUM, assignee, c.submitter,
         "Package " + c.code + " (workspace " + c.workspace + ") is ready for review. " + documents
-            + " document(s), submitted by " + nz(c.submitter) + ". Open: " + link(packageId));
+            + " document(s), submitted by " + nz(c.submitter) + ". Open: " + reviewLink(packageId));
   }
 
   /** Extraction failed: the submitter has to retry or decline. */
@@ -97,7 +97,7 @@ public class EcwsTaskPublisher {
     close(c, FAILED, "A new extraction failure replaced this task");
     create(c, FAILED, "Extraction failed for package " + c.code, HIGH, blankToNull(c.submitter),
         "system", "Extraction failed for package " + c.code + " (workspace " + c.workspace
-            + "). Open the package in ELCM, then Retry or Decline it. Open: " + link(packageId));
+            + "). Open the package in ELCM, then Retry or Decline it. Open: " + reviewLink(packageId));
   }
 
   /** Retry was pressed: the failure task is done. */
@@ -129,7 +129,7 @@ public class EcwsTaskPublisher {
     final String assignee = picker.pick(props.getApproverRole(), excluded).orElse(null);
     create(c, APPROVAL, "Approve package " + c.code, MEDIUM, assignee, reviewer,
         "Review of package " + c.code + " (workspace " + c.workspace + ") was completed by "
-            + nz(reviewer) + ". Approve it, or send it back with a reason. Open: " + link(packageId));
+            + nz(reviewer) + ". Approve it, or send it back with a reason. Open: " + reviewLink(packageId));
   }
 
   /** The reviewer reopened a completed review: back to review. */
@@ -146,7 +146,7 @@ public class EcwsTaskPublisher {
     final String assignee = picker.pick(props.getReviewerRole(), excluding(c.submitter)).orElse(null);
     create(c, REVIEW, "Review package " + c.code, MEDIUM, assignee, by,
         "The review of package " + c.code + " (workspace " + c.workspace + ") was reopened by "
-            + nz(by) + ". Open: " + link(packageId));
+            + nz(by) + ". Open: " + reviewLink(packageId));
   }
 
   /** The approver sent the package back: review again, and tell the person in charge. */
@@ -164,7 +164,7 @@ public class EcwsTaskPublisher {
     final String reviewer = picker.pick(props.getReviewerRole(), excluding(c.submitter)).orElse(null);
     create(c, REVIEW, "Review package " + c.code + " again", MEDIUM, reviewer, by,
         "Package " + c.code + " (workspace " + c.workspace + ") was sent back by " + nz(by)
-            + ": " + why + " Open: " + link(packageId));
+            + ": " + why + " Open: " + reviewLink(packageId));
     create(c, FIX, "Fix package " + c.code, HIGH, c.assigneeLogin, by,
         "Package " + c.code + " (workspace " + c.workspace + ") was sent back by " + nz(by)
             + ": " + why + " Open: " + link(packageId));
@@ -428,12 +428,25 @@ public class EcwsTaskPublisher {
     return date;
   }
 
+  /** The Dashboard with the package; for a task about a draft that must be fixed there. */
   private String link(final Long packageId) {
+    return baseUrl() + "/dashboard?review=" + packageId;
+  }
+
+  /**
+   * ADDED 2026-10-25: the Package Review page of the package, for Review, Approval and extraction
+   * tasks. Links already written into earlier tasks (dashboard with review) keep working.
+   */
+  private String reviewLink(final Long packageId) {
+    return baseUrl() + "/packagereview?package=" + packageId;
+  }
+
+  private String baseUrl() {
     String base = props.getUiBaseUrl() == null ? "" : props.getUiBaseUrl().trim();
     while (base.endsWith("/")) {
       base = base.substring(0, base.length() - 1);
     }
-    return base + "/dashboard?review=" + packageId;
+    return base;
   }
 
   /** The login id for a stored assignee (a login id, or on old rows a display name); null if unknown. */
