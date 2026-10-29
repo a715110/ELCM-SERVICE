@@ -1,5 +1,6 @@
 package com.dodaso.ecosystem.elcm.service.extraction;
 
+import com.dodaso.ecosystem.elcm.integration.ai.ElcmAiIndexer;
 import com.dodaso.ecosystem.elcm.entity.extraction.ExtractionFieldResult;
 import com.dodaso.ecosystem.elcm.entity.extraction.ExtractionTemplateField;
 import com.dodaso.ecosystem.elcm.entity.pipeline.ContractRecord;
@@ -79,6 +80,7 @@ public class ApplyStore {
   private final ReviewerSeparation reviewerSeparation;
   /** ADDED 2026-10-16: closes the ECWS approval task. */
   private final EcwsTaskPublisher ecwsTaskPublisher;
+  private final ElcmAiIndexer aiIndexer;
 
   /**
    * The records a reviewer can choose when the package has no target: same workspace, active or
@@ -183,6 +185,8 @@ public class ApplyStore {
     contractPackageRepository.save(pkg);
     // ADDED 2026-10-16: nothing is left to do for this package.
     ecwsTaskPublisher.applied(packageId, caller);
+    // ADDED 2026-10-28 -- AI search sees the applied counterparty, after this transaction commits
+    aiIndexer.contractRecordChanged(record.getId());
     return new ApplyResult(written, unchanged, skipped, counterparty[0], counterparty[1],
         record.getRecordCode());
   }

@@ -1,5 +1,6 @@
 package com.dodaso.ecosystem.elcm.purge;
 
+import com.dodaso.ecosystem.elcm.integration.ai.ElcmAiIndexer;
 import com.dodaso.ecosystem.elcm.repository.approval.ReviewNotationRepository;
 import com.dodaso.ecosystem.elcm.repository.extraction.DocumentClassificationRepository;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionFieldResultRepository;
@@ -12,6 +13,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 /**
  * ADDED 2026-10-21. Removes the database rows of one soft-deleted staged document, all in one
@@ -38,6 +41,7 @@ public class StagedDocumentPurger {
   private final DocumentClassificationRepository classificationRepository;
   private final ExtractionReprocessRepository reprocessRepository;
   private final ReviewNotationRepository reviewNotationRepository;
+  private final ElcmAiIndexer aiIndexer;
 
   /**
    * Removes the rows.
@@ -56,6 +60,8 @@ public class StagedDocumentPurger {
     classificationRepository.purgeByStagedDocumentId(documentId);
     reprocessRepository.purgeByStagedDocumentId(documentId);
     reviewNotationRepository.purgeByStagedDocumentId(documentId);
+    // ADDED 2026-10-28 -- AI search rows go too (after commit; nothing is sent on rollback)
+    aiIndexer.stagedDocumentsRemoved(List.of(documentId));
     return deletedStagedDocumentRepository.purgeById(documentId) == 1;
   }
 }

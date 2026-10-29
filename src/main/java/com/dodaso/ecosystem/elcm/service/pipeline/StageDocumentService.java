@@ -1,5 +1,6 @@
 package com.dodaso.ecosystem.elcm.service.pipeline;
 
+import com.dodaso.ecosystem.elcm.integration.ai.ElcmAiIndexer;
 import com.dodaso.ecosystem.baseline.common.helper.TimezoneContextHelper;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -120,6 +121,7 @@ public class StageDocumentService {
     private final LkpStagedDocumentStatusRepository lkpStagedDocumentStatusRepository;
     private final RecordProvisioningService recordProvisioningService;
     private final AssigneeDirectoryLookupService assigneeDirectoryLookupService;
+    private final ElcmAiIndexer aiIndexer;
 
     /**
      * Not transactional on purpose -- see class Javadoc. Delegates the DB
@@ -526,6 +528,8 @@ public class StageDocumentService {
         doc.setDeletedBy(callerLoginId);
         doc.setDeleteReason(trimmedReason == null || trimmedReason.isEmpty() ? null : trimmedReason);
         stagedDocumentRepository.save(doc);
+        // ADDED 2026-10-28 -- removed from AI search, after this transaction commits
+        aiIndexer.stagedDocumentsRemoved(List.of(id));
     }
 
     /**

@@ -454,6 +454,12 @@
       <version>${revision}</version>
     </dependency>
     <dependency>
+      <!-- AI search requests (index, delete, scoped search) sent to ai-search-service -->
+      <artifactId>ai-search-data-model</artifactId>
+      <groupId>com.dodaso.ecosystem.ai.data.model</groupId>
+      <version>${revision}</version>
+    </dependency>
+    <dependency>
       <!-- Needed for the Assignee-column hover preview (dashboard.xhtml):
            elcm-service calls IAMS's getUserDirectories() endpoint and
            needs its UserDirectoryDTO/UserDirectoryDTOContainer/

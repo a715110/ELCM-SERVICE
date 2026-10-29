@@ -1,5 +1,6 @@
 package com.dodaso.ecosystem.elcm.service.extraction;
 
+import com.dodaso.ecosystem.elcm.integration.ai.ElcmAiIndexer;
 import com.dodaso.ecosystem.baseline.common.constant.ServiceDiscoveryEnum;
 import com.dodaso.ecosystem.baseline.common.proxy.RESTServiceClient;
 import com.dodaso.ecosystem.common.dto.FileUploadDTO;
@@ -44,6 +45,8 @@ public class ExtractionWorker {
     private final ExtractionControlStore controlStore;
     /** ADDED 2026-10-20: the package Activity Log. */
     private final ActivityRecorder activityRecorder;
+    /** ADDED 2026-10-28: makes an extracted document findable by AI search. */
+    private final ElcmAiIndexer aiIndexer;
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
 
@@ -69,7 +72,8 @@ public class ExtractionWorker {
                             final FileUploadLookupService fileUploadLookupService,
                             final RESTServiceClient restServiceClient,
                             final ExtractionControlStore controlStore,
-                            final ActivityRecorder activityRecorder) {
+                            final ActivityRecorder activityRecorder,
+                            final ElcmAiIndexer aiIndexer) {
         this.properties = properties;
         this.store = store;
         this.extractorClient = extractorClient;
@@ -77,6 +81,7 @@ public class ExtractionWorker {
         this.restServiceClient = restServiceClient;
         this.controlStore = controlStore;
         this.activityRecorder = activityRecorder;
+        this.aiIndexer = aiIndexer;
     }
 
     /**
@@ -185,6 +190,8 @@ public class ExtractionWorker {
                     ticket.templateJson(), file.getFileName(), file.getContentType(), content,
                     () -> stopped(submissionId));
                 store.saveResult(ticket.jobId(), submissionId, result);
+                // ADDED 2026-10-28 -- AI search; runs in the background and never fails extraction
+                aiIndexer.stagedDocumentExtracted(ticket.stagedDocumentId(), file.getFileName(), content);
                 return true;
             } catch (final ExtractorCancelledException e) {
                 // ADDED 2026-10-18 -- the package was stopped while the extractor was reading.

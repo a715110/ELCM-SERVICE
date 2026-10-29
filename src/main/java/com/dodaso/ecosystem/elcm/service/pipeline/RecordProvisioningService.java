@@ -1,5 +1,6 @@
 package com.dodaso.ecosystem.elcm.service.pipeline;
 
+import com.dodaso.ecosystem.elcm.integration.ai.ElcmAiIndexer;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -71,6 +72,7 @@ public class RecordProvisioningService {
     private final PropertyRepository propertyRepository;
     private final ContractRecordRepository contractRecordRepository;
     private final LkpContractRecordStatusRepository lkpContractRecordStatusRepository;
+    private final ElcmAiIndexer aiIndexer;
 
     /**
      * New Record path. dto must carry newRecordCounterparty (required --
@@ -135,6 +137,8 @@ public class RecordProvisioningService {
 
         property.setContractRecord(savedRecord);
         propertyRepository.save(property);
+        // ADDED 2026-10-28 -- AI search, after this transaction commits
+        aiIndexer.contractRecordChanged(savedRecord.getId());
 
         return savedRecord;
     }
