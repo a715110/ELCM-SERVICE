@@ -21,6 +21,20 @@ public class EcwsIntegrationProperties {
   /** IAMS role whose holders get APPROVAL tasks. */
   private String approverRole = "Approver";
 
+  /**
+   * ADDED 2026-11-07: when true, submitting a package and completing a review are refused unless a
+   * reviewer and an approver can be found (see ReviewRoleRules). Set false to switch the checks off.
+   */
+  private boolean validateRoles = true;
+
+  public boolean isValidateRoles() {
+    return validateRoles;
+  }
+
+  public void setValidateRoles(final boolean validateRoles) {
+    this.validateRoles = validateRoles;
+  }
+
   /** How often the sender looks for queued requests. */
   private long pollIntervalMs = 15_000;
 

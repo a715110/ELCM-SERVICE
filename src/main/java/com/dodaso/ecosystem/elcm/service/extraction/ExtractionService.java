@@ -119,9 +119,20 @@ public class ExtractionService {
 
     /** Reviewer: complete the review (422 while critical or flagged fields are unconfirmed). */
     public void completeReview(final Long packageId, final String caller) {
-        reviewStore.complete(packageId, caller);
+        completeReview(packageId, caller, null);
+    }
+
+    /** Reviewer: complete the review, with the approver they picked (null: ELCM picks). */
+    public void completeReview(final Long packageId, final String caller, final String approver) {
+        reviewStore.complete(packageId, caller, approver);
         activityRecorder.record(packageId, ActivityEvent.REVIEW_COMPLETED, caller,
-            "The review was completed.");
+            approver == null || approver.isBlank() ? "The review was completed."
+                : "The review was completed. Approver chosen: " + approver.trim() + ".");
+    }
+
+    /** Reviewer: the suggested approver and the alternatives, before completing the review. */
+    public ApproverPreview approverPreview(final Long packageId, final String caller) {
+        return reviewStore.approverPreview(packageId, caller);
     }
 
     /** What the reviewer did to one field, oldest first. */
@@ -149,6 +160,19 @@ public class ExtractionService {
         reviewStore.reopen(packageId, caller);
         activityRecorder.record(packageId, ActivityEvent.REVIEW_REOPENED, caller,
             "The completed review was reopened.");
+    }
+
+    /** Approver: people who may take over the approval of this package. */
+    public List<com.dodaso.ecosystem.auth.dto.UserDirectoryDTO> approverCandidates(
+        final Long packageId) {
+        return reviewStore.approverCandidates(packageId);
+    }
+
+    /** Approver: hand the approval to another eligible approver. */
+    public void changeApprover(final Long packageId, final String newApprover, final String caller) {
+        final String login = reviewStore.changeApprover(packageId, newApprover, caller);
+        activityRecorder.record(packageId, ActivityEvent.ASSIGNEE_CHANGED, caller,
+            "The approver was changed to " + login + ".");
     }
 
     /** Approver: send a completed review back to the reviewer, with a reason. */

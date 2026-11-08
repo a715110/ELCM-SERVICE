@@ -4,6 +4,8 @@ import com.dodaso.ecosystem.baseline.common.constant.ServiceDiscoveryEnum;
 import com.dodaso.ecosystem.baseline.common.proxy.RESTServiceClient;
 import com.dodaso.ecosystem.ecws.dto.ExternalTaskRequestDTO;
 import com.dodaso.ecosystem.ecws.dto.ExternalTaskResultDTO;
+import java.util.Arrays;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
@@ -40,10 +42,14 @@ public class EcwsTaskClient {
         request.setPriority(row.getPriority());
         request.setDocumentsText(row.getDocumentsText());
         request.setDueDate(row.getDueDate() == null ? null : row.getDueDate().toString());
+        request.setMemberLogins(membersOf(row));
+        // ADDED 2026-11-07: the extraction task is only a place to hold the members, no copies.
+        request.setSilentMembers(EcwsTaskPublisher.EXTRACTION.equals(row.getEventCode()));
       }
       case EcwsTaskOutbox.CLOSE -> {
         endpoint = "closeExternalTasks";
         request.setComment(row.getCommentText());
+        request.setMemberLogins(membersOf(row));
       }
       case EcwsTaskOutbox.REASSIGN -> {
         endpoint = "reassignExternalTasks";
@@ -62,9 +68,19 @@ public class EcwsTaskClient {
     return result;
   }
 
+  /** The comma separated member logins of a row as a list; empty when there are none. */
+  static List<String> membersOf(final EcwsTaskOutbox row) {
+    final String text = row.getMemberLogins();
+    if (text == null || text.isBlank()) {
+      return List.of();
+    }
+    return Arrays.stream(text.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+  }
+
   /** The ECWS task type (subsystem ELCM) for an event; see ecws_elcm_task_types.sql. */
   static String taskTypeName(final String eventCode) {
     return switch (eventCode) {
+      case EcwsTaskPublisher.EXTRACTION -> "ELCM Extraction";
       case EcwsTaskPublisher.REVIEW -> "ELCM Review";
       case EcwsTaskPublisher.APPROVAL -> "ELCM Approval";
       case EcwsTaskPublisher.FIX -> "ELCM Fix";

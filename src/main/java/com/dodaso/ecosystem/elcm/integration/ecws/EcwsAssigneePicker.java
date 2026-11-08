@@ -48,6 +48,43 @@ public class EcwsAssigneePicker {
     return Optional.ofNullable(best);
   }
 
+  /**
+   * ADDED 2026-11-06 -- like {@link #pick}, but the person in charge of the package comes first.
+   * The package assignee gets the task when they hold the role and are not excluded (for review:
+   * not the submitter); otherwise the least busy qualifying person is picked as before.
+   *
+   * @param preferred login id of the package assignee, may be null
+   */
+  public Optional<String> pickPreferring(
+      final String roleName, final String preferred, final Collection<String> excluded) {
+    if (preferred != null && !preferred.isBlank() && !isExcluded(preferred, excluded)) {
+      for (final UserDirectoryDTO user : directory.findAllWithRole(roleName)) {
+        final String login = user.getLoginId();
+        if (login != null && preferred.trim().equalsIgnoreCase(login.trim())) {
+          return Optional.of(login);
+        }
+      }
+    }
+    return pick(roleName, excluded);
+  }
+
+  /**
+   * ADDED 2026-11-07 -- true when the person holds the role and is not excluded. Used to decide
+   * whether a package's new assignee may take over an open review task.
+   */
+  public boolean qualifies(
+      final String roleName, final String login, final Collection<String> excluded) {
+    if (login == null || login.isBlank() || isExcluded(login, excluded)) {
+      return false;
+    }
+    for (final UserDirectoryDTO user : directory.findAllWithRole(roleName)) {
+      if (user.getLoginId() != null && login.trim().equalsIgnoreCase(user.getLoginId().trim())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private boolean isExcluded(final String login, final Collection<String> excluded) {
     if (!separationOn || excluded == null) {
       return false;

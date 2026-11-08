@@ -169,8 +169,24 @@ public class ExtractionController {
   @PostMapping("/complete")
   @RequiresPermission(ElcmPermission.PIPELINE_REVIEW)
   @ResponseStatus(HttpStatus.NO_CONTENT)
-  public void complete(@PathVariable final Long id, final HttpServletRequest httpRequest) {
-    extractionService.completeReview(id, callerIdentityResolver.loginIdOf(httpRequest));
+  public void complete(@PathVariable final Long id,
+      @RequestBody(required = false)
+      final com.dodaso.ecosystem.elcm.service.pipeline.ReassignPackageRequest request,
+      final HttpServletRequest httpRequest) {
+    extractionService.completeReview(id, callerIdentityResolver.loginIdOf(httpRequest),
+        request == null ? null : request.getAssigneeId());
+  }
+
+  /**
+   * ADDED 2026-11-07: before completing, the approver ELCM would pick (login id, may be null) and
+   * the people the reviewer may choose instead. Nothing is saved. 404 no submission; 409 not in
+   * review.
+   */
+  @GetMapping("/approver-preview")
+  @RequiresPermission(ElcmPermission.PIPELINE_REVIEW)
+  public com.dodaso.ecosystem.elcm.service.extraction.ApproverPreview approverPreview(
+      @PathVariable final Long id, final HttpServletRequest httpRequest) {
+    return extractionService.approverPreview(id, callerIdentityResolver.loginIdOf(httpRequest));
   }
 
   /**
@@ -184,6 +200,31 @@ public class ExtractionController {
   public void sendBack(@PathVariable final Long id, @RequestBody final SendBackRequest request,
       final HttpServletRequest httpRequest) {
     extractionService.sendBack(id, request == null ? null : request.reason(),
+        callerIdentityResolver.loginIdOf(httpRequest));
+  }
+
+  /**
+   * ADDED 2026-11-07: people who may take over the approval of this package (Approver role, not
+   * the submitter, not the reviewer). 404 no submission; 409 not waiting for approval.
+   */
+  @GetMapping("/approver-candidates")
+  @RequiresPermission(ElcmPermission.PIPELINE_APPROVE)
+  public List<com.dodaso.ecosystem.auth.dto.UserDirectoryDTO> approverCandidates(
+      @PathVariable final Long id) {
+    return extractionService.approverCandidates(id);
+  }
+
+  /**
+   * ADDED 2026-11-07: hand the approval to another approver; body {"assigneeId": "login"}. 204;
+   * 404 no submission; 409 not waiting for approval; 412 the person is not an eligible approver.
+   */
+  @PostMapping("/approver")
+  @RequiresPermission(ElcmPermission.PIPELINE_APPROVE)
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void changeApprover(@PathVariable final Long id,
+      @RequestBody final com.dodaso.ecosystem.elcm.service.pipeline.ReassignPackageRequest request,
+      final HttpServletRequest httpRequest) {
+    extractionService.changeApprover(id, request == null ? null : request.getAssigneeId(),
         callerIdentityResolver.loginIdOf(httpRequest));
   }
 

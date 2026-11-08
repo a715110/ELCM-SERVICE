@@ -40,14 +40,21 @@ import org.springframework.transaction.annotation.Transactional;
  * Because a request is saved in the caller's transaction, the outbox table must exist before the
  * integration is turned on (elcm_ecws_task_outbox.sql).
  *
- * <p>Events and task kinds: REVIEW (review the extracted package), APPROVAL (approve a reviewed
- * package), FIX (correct a declined or sent-back package), FAILED (extraction failed).
+ * <p>Events and task kinds: EXTRACTION (submitted, being extracted; silent, no assignee), REVIEW
+ * (review the extracted package), APPROVAL (approve a reviewed package), FIX (correct a declined or
+ * sent-back package), FAILED (extraction failed).
+ *
+ * <p>ADDED 2026-11-07 -- members. Every request carries the people who have taken part so far
+ * (submitter, package assignee, the reviewer, the approver), so each ECWS task lists them as
+ * Members. The list only grows. The person who really acted is added, not only the person who was
+ * picked, so the approver who applies the package is on the task that closes.
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class EcwsTaskPublisher {
 
+  public static final String EXTRACTION = "EXTRACTION";
   public static final String REVIEW = "REVIEW";
   public static final String APPROVAL = "APPROVAL";
   public static final String FIX = "FIX";
@@ -66,6 +73,41 @@ public class EcwsTaskPublisher {
   private final AssigneeDirectoryLookupService directory;
   private final FileUploadLookupService fileUploadLookupService;
 
+  /**
+   * The package was submitted: extraction starts. A silent task with no assignee holds the
+   * submitter and the package assignee (the reviewer) as members. Nobody is notified.
+   */
+  @Transactional
+  public void submitted(final Long packageId, final String by) {
+    if (!props.isEnabled()) {
+      return;
+    }
+    final Ctx c = context(packageId);
+    if (c == null) {
+      return;
+    }
+    openExtraction(c);
+  }
+
+  /** The submission was withdrawn before anyone picked it up: the extraction task is done. */
+  @Transactional
+  public void unsubmitted(final Long packageId) {
+    if (!props.isEnabled()) {
+      return;
+    }
+    final Ctx c = context(packageId);
+    if (c != null) {
+      close(c, EXTRACTION, "Submission withdrawn in ELCM", members(c));
+    }
+  }
+
+  private void openExtraction(final Ctx c) {
+    create(c, EXTRACTION, "Extraction of package " + c.code, MEDIUM, null, c.submitter,
+        "Package " + c.code + " (workspace " + c.workspace + ") was submitted by "
+            + nz(c.submitter) + " and is being extracted. Open: " + reviewLink(c.packageId),
+        members(c));
+  }
+
   /** Extraction finished well: the package is ready for review. */
   @Transactional
   public void reviewReady(final Long packageId) {
@@ -76,12 +118,15 @@ public class EcwsTaskPublisher {
     if (c == null) {
       return;
     }
-    close(c, FAILED, "Extraction succeeded in ELCM");
-    final String assignee = picker.pick(props.getReviewerRole(), excluding(c.submitter)).orElse(null);
+    close(c, FAILED, "Extraction succeeded in ELCM", members(c));
+    close(c, EXTRACTION, "Extraction finished in ELCM", members(c));
+    final String assignee = picker.pickPreferring(
+        props.getReviewerRole(), c.assigneeLogin, excluding(c.submitter)).orElse(null);
     final long documents = packageDocumentRepository.countByContractPackage_Id(packageId);
     create(c, REVIEW, "Review package " + c.code, MEDIUM, assignee, c.submitter,
         "Package " + c.code + " (workspace " + c.workspace + ") is ready for review. " + documents
-            + " document(s), submitted by " + nz(c.submitter) + ". Open: " + reviewLink(packageId));
+            + " document(s), submitted by " + nz(c.submitter) + ". Open: " + reviewLink(packageId),
+        members(c, assignee));
   }
 
   /** Extraction failed: the submitter has to retry or decline. */
@@ -94,10 +139,12 @@ public class EcwsTaskPublisher {
     if (c == null) {
       return;
     }
-    close(c, FAILED, "A new extraction failure replaced this task");
+    close(c, FAILED, "A new extraction failure replaced this task", members(c));
+    close(c, EXTRACTION, "Extraction failed in ELCM", members(c));
     create(c, FAILED, "Extraction failed for package " + c.code, HIGH, blankToNull(c.submitter),
         "system", "Extraction failed for package " + c.code + " (workspace " + c.workspace
-            + "). Open the package in ELCM, then Retry or Decline it. Open: " + reviewLink(packageId));
+            + "). Open the package in ELCM, then Retry or Decline it. Open: " + reviewLink(packageId),
+        members(c));
   }
 
   /** Retry was pressed: the failure task is done. */
@@ -108,13 +155,34 @@ public class EcwsTaskPublisher {
     }
     final Ctx c = context(packageId);
     if (c != null) {
-      close(c, FAILED, "Retry started in ELCM");
+      close(c, FAILED, "Retry started in ELCM", members(c));
+      openExtraction(c);
     }
+  }
+
+  /**
+   * ADDED 2026-11-07 -- who ELCM would pick as approver now, so the reviewer can see and change it
+   * before completing the review. Nothing is saved. Empty when nobody qualifies.
+   */
+  public Optional<String> suggestedApprover(final String submitter, final String reviewer) {
+    final List<String> excluded = new ArrayList<>(excluding(submitter));
+    excluded.add(reviewer);
+    return picker.pick(props.getApproverRole(), excluded);
   }
 
   /** The reviewer completed the review: the approver is next. */
   @Transactional
   public void reviewCompleted(final Long packageId, final String reviewer) {
+    reviewCompleted(packageId, reviewer, null);
+  }
+
+  /**
+   * The reviewer completed the review. chosenApprover is the person the reviewer picked in the
+   * Complete review dialog (already checked by ReviewRoleRules); null lets ELCM pick.
+   */
+  @Transactional
+  public void reviewCompleted(
+      final Long packageId, final String reviewer, final String chosenApprover) {
     if (!props.isEnabled()) {
       return;
     }
@@ -122,14 +190,16 @@ public class EcwsTaskPublisher {
     if (c == null) {
       return;
     }
-    close(c, REVIEW, "Completed in ELCM by " + nz(reviewer));
-    close(c, FIX, "Review completed again in ELCM by " + nz(reviewer));
+    close(c, REVIEW, "Completed in ELCM by " + nz(reviewer), members(c, reviewer));
+    close(c, FIX, "Review completed again in ELCM by " + nz(reviewer), members(c, reviewer));
     final List<String> excluded = new ArrayList<>(excluding(c.submitter));
     excluded.add(reviewer);
-    final String assignee = picker.pick(props.getApproverRole(), excluded).orElse(null);
+    final String assignee =
+        picker.pickPreferring(props.getApproverRole(), chosenApprover, excluded).orElse(null);
     create(c, APPROVAL, "Approve package " + c.code, MEDIUM, assignee, reviewer,
         "Review of package " + c.code + " (workspace " + c.workspace + ") was completed by "
-            + nz(reviewer) + ". Approve it, or send it back with a reason. Open: " + reviewLink(packageId));
+            + nz(reviewer) + ". Approve it, or send it back with a reason. Open: " + reviewLink(packageId),
+        members(c, reviewer, assignee));
   }
 
   /** The reviewer reopened a completed review: back to review. */
@@ -142,11 +212,13 @@ public class EcwsTaskPublisher {
     if (c == null) {
       return;
     }
-    close(c, APPROVAL, "Review reopened in ELCM by " + nz(by));
-    final String assignee = picker.pick(props.getReviewerRole(), excluding(c.submitter)).orElse(null);
+    close(c, APPROVAL, "Review reopened in ELCM by " + nz(by), members(c, by));
+    final String assignee = picker.pickPreferring(
+        props.getReviewerRole(), c.assigneeLogin, excluding(c.submitter)).orElse(null);
     create(c, REVIEW, "Review package " + c.code, MEDIUM, assignee, by,
         "The review of package " + c.code + " (workspace " + c.workspace + ") was reopened by "
-            + nz(by) + ". Open: " + reviewLink(packageId));
+            + nz(by) + ". Open: " + reviewLink(packageId),
+        members(c, by, assignee));
   }
 
   /** The approver sent the package back: review again, and tell the person in charge. */
@@ -159,15 +231,18 @@ public class EcwsTaskPublisher {
     if (c == null) {
       return;
     }
-    close(c, APPROVAL, "Sent back in ELCM by " + nz(by));
+    close(c, APPROVAL, "Sent back in ELCM by " + nz(by), members(c, by));
     final String why = cut(reason, MAX_REASON);
-    final String reviewer = picker.pick(props.getReviewerRole(), excluding(c.submitter)).orElse(null);
+    final String reviewer = picker.pickPreferring(
+        props.getReviewerRole(), c.assigneeLogin, excluding(c.submitter)).orElse(null);
     create(c, REVIEW, "Review package " + c.code + " again", MEDIUM, reviewer, by,
         "Package " + c.code + " (workspace " + c.workspace + ") was sent back by " + nz(by)
-            + ": " + why + " Open: " + reviewLink(packageId));
+            + ": " + why + " Open: " + reviewLink(packageId),
+        members(c, by, reviewer));
     create(c, FIX, "Fix package " + c.code, HIGH, c.assigneeLogin, by,
         "Package " + c.code + " (workspace " + c.workspace + ") was sent back by " + nz(by)
-            + ": " + why + " Open: " + link(packageId));
+            + ": " + why + " Open: " + link(packageId),
+        members(c, by, reviewer));
   }
 
   /** The package was declined back to Assembly: the person in charge has to fix it. */
@@ -181,13 +256,16 @@ public class EcwsTaskPublisher {
       return;
     }
     final String note = "Declined in ELCM by " + nz(by);
-    close(c, REVIEW, note);
-    close(c, APPROVAL, note);
-    close(c, FAILED, note);
-    close(c, FIX, note);
+    final List<String> people = members(c, by);
+    close(c, EXTRACTION, note, people);
+    close(c, REVIEW, note, people);
+    close(c, APPROVAL, note, people);
+    close(c, FAILED, note, people);
+    close(c, FIX, note, people);
     create(c, FIX, "Fix package " + c.code, HIGH, c.assigneeLogin, by,
         "Package " + c.code + " (workspace " + c.workspace + ") was declined by " + nz(by) + ": "
-            + cut(reason, MAX_REASON) + " Correct it and submit it again. Open: " + link(packageId));
+            + cut(reason, MAX_REASON) + " Correct it and submit it again. Open: " + link(packageId),
+        people);
   }
 
   /** The reviewed values were applied: nothing is left to do. */
@@ -201,9 +279,13 @@ public class EcwsTaskPublisher {
       return;
     }
     final String note = "Applied in ELCM by " + nz(by);
-    close(c, APPROVAL, note);
-    close(c, REVIEW, note);
-    close(c, FIX, note);
+    // the approver who really applied the package joins the task that closes, so the final list is
+    // submitter, reviewer and approver
+    final List<String> people = members(c, by);
+    close(c, APPROVAL, note, people);
+    close(c, REVIEW, note, people);
+    close(c, FIX, note, people);
+    close(c, EXTRACTION, note, people);
   }
 
   /** The package was submitted again: the fix task is done. */
@@ -214,7 +296,7 @@ public class EcwsTaskPublisher {
     }
     final Ctx c = context(packageId);
     if (c != null) {
-      close(c, FIX, "Submitted again in ELCM by " + nz(by));
+      close(c, FIX, "Submitted again in ELCM by " + nz(by), members(c, by));
     }
   }
 
@@ -235,12 +317,42 @@ public class EcwsTaskPublisher {
       row.setCommentText("Package reassigned in ELCM");
       outbox.save(row);
     }
+    // ADDED 2026-11-07: an open review task moves too, when the new person may review it
+    if (login != null && picker.qualifies(props.getReviewerRole(), login, excluding(c.submitter))
+        && outbox.reassignOpen(packageId, REVIEW, login) > 0) {
+      final EcwsTaskOutbox row = row(EcwsTaskOutbox.REASSIGN, REVIEW, c);
+      row.setAssigneeLogin(login);
+      row.setCommentText("Package reassigned in ELCM");
+      outbox.save(row);
+    }
+  }
+
+  /**
+   * ADDED 2026-11-07 -- the approval was handed to another approver. The open approval task moves
+   * to them (ECWS tells the new assignee and adds them as a member; the old approver stays on the
+   * list), and the workload count follows the new person.
+   */
+  @Transactional
+  public void approverChanged(final Long packageId, final String newApprover, final String by) {
+    if (!props.isEnabled()) {
+      return;
+    }
+    final Ctx c = context(packageId);
+    if (c == null) {
+      return;
+    }
+    if (outbox.reassignOpen(packageId, APPROVAL, newApprover) > 0) {
+      final EcwsTaskOutbox row = row(EcwsTaskOutbox.REASSIGN, APPROVAL, c);
+      row.setAssigneeLogin(newApprover);
+      row.setCommentText("Approver changed in ELCM by " + nz(by));
+      outbox.save(row);
+    }
   }
 
   // ---- building and queueing ----
 
   /** Who and what a request is about, read once per call. */
-  private record Ctx(Long packageId, String code, String workspace, String submitter,
+  record Ctx(Long packageId, String code, String workspace, String submitter,
                      String assigneeLogin) {
   }
 
@@ -262,8 +374,10 @@ public class EcwsTaskPublisher {
   }
 
   private void create(final Ctx c, final String event, final String summary, final String priority,
-                      final String assignee, final String requestor, final String description) {
+                      final String assignee, final String requestor, final String description,
+                      final List<String> memberLogins) {
     final EcwsTaskOutbox row = row(EcwsTaskOutbox.CREATE, event, c);
+    row.setMemberLogins(joinLogins(memberLogins));
     row.setSummary(cut(summary, 200));
     row.setDescription(cut(description, 500));
     row.setPriority(priority);
@@ -277,12 +391,44 @@ public class EcwsTaskPublisher {
     outbox.save(row);
   }
 
-  private void close(final Ctx c, final String event, final String comment) {
+  private void close(final Ctx c, final String event, final String comment,
+                     final List<String> memberLogins) {
     if (outbox.closeOpen(c.packageId, event) > 0) {
       final EcwsTaskOutbox row = row(EcwsTaskOutbox.CLOSE, event, c);
       row.setCommentText(cut(comment, 500));
+      row.setMemberLogins(joinLogins(memberLogins));
       outbox.save(row);
     }
+  }
+
+  /**
+   * ADDED 2026-11-07 -- the people for a task's member list: the submitter, the person in charge of
+   * the package, and the extra logins given (reviewer, approver, whoever acted). Blank values and
+   * repeats (same login in another case) are dropped, the order is kept.
+   */
+  static List<String> members(final Ctx c, final String... extra) {
+    final List<String> all = new ArrayList<>();
+    all.add(c.submitter);
+    all.add(c.assigneeLogin);
+    all.addAll(java.util.Arrays.asList(extra));
+    final List<String> result = new ArrayList<>();
+    final java.util.Set<String> seen = new java.util.HashSet<>();
+    for (final String login : all) {
+      if (login != null && !login.isBlank() && !"system".equalsIgnoreCase(login.trim())
+          && seen.add(login.trim().toLowerCase(java.util.Locale.ROOT))) {
+        result.add(login.trim());
+      }
+    }
+    return result;
+  }
+
+  /** Logins joined with commas for the outbox column (at most 1000 characters); null when none. */
+  static String joinLogins(final List<String> logins) {
+    if (logins == null || logins.isEmpty()) {
+      return null;
+    }
+    final String text = String.join(",", logins);
+    return text.length() <= 1000 ? text : text.substring(0, text.lastIndexOf(',', 1000));
   }
 
   private EcwsTaskOutbox row(final String action, final String event, final Ctx c) {

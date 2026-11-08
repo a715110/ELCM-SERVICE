@@ -81,6 +81,8 @@ public class ContractPackageDataService {
     private final EntityManager entityManager;
     /** ADDED 2026-10-16: queues and closes ECWS tasks on submit and reassign. */
     private final EcwsTaskPublisher ecwsTaskPublisher;
+    /** ADDED 2026-11-07: a reviewer and an approver must be available before submit. */
+    private final ReviewRoleRules reviewRoleRules;
 
     /**
      * REVISED 2026-10-15 -- three queries for the whole list, however many packages there are. It used
@@ -271,6 +273,8 @@ public class ContractPackageDataService {
         if (blankToNull(pkg.getAssigneeId()) == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The package has no assignee");
         }
+        // ADDED 2026-11-07: 412 when the assignee cannot review it or nobody could approve it.
+        reviewRoleRules.checkSubmit(callerLoginId, pkg.getAssigneeId());
         // A package that was submitted before has a declined submission on record: this is a
         // resubmission and needs a note on what was corrected (ADDED 2026-10-14).
         final String note = blankToNull(correctionNote);
@@ -307,6 +311,8 @@ public class ContractPackageDataService {
         }
         // ADDED 2026-10-16: the fix task is done once the package is submitted again.
         ecwsTaskPublisher.resubmitted(packageId, submission.getSubmittedBy());
+        // ADDED 2026-11-07: extraction starts; a silent task holds the submitter and the reviewer.
+        ecwsTaskPublisher.submitted(packageId, submission.getSubmittedBy());
     }
 
     /**
@@ -341,6 +347,8 @@ public class ContractPackageDataService {
         }
         pkg.setStatus(assembly);
         contractPackageRepository.save(pkg);
+        // ADDED 2026-11-07: the extraction task is no longer needed.
+        ecwsTaskPublisher.unsubmitted(packageId);
     }
 
     /**

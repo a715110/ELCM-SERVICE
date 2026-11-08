@@ -47,6 +47,8 @@ public class ContractPackageController {
     private final CallerIdentityResolver callerIdentityResolver;
     /** ADDED 2026-10-20: the package Activity Log, read back from EARS. */
     private final ActivityReadService activityReadService;
+    /** ADDED 2026-11-07: who can be offered as reviewer. */
+    private final com.dodaso.ecosystem.elcm.service.pipeline.ReviewRoleRules reviewRoleRules;
 
     @GetMapping
     @RequiresPermission(ElcmPermission.PIPELINE_VIEW)
@@ -102,6 +104,17 @@ public class ContractPackageController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void reassign(@PathVariable final Long id, @RequestBody final ReassignPackageRequest request) {
         contractPackageService.reassign(id, request);
+    }
+
+    /**
+     * ADDED 2026-11-07: the people a package can be assigned to as its reviewer: they hold the
+     * Reviewer role and are not the caller (who is the likely submitter).
+     */
+    @GetMapping("/reviewer-candidates")
+    @RequiresPermission(ElcmPermission.PIPELINE_SUBMIT)
+    public List<com.dodaso.ecosystem.auth.dto.UserDirectoryDTO> reviewerCandidates(
+        final HttpServletRequest httpRequest) {
+        return reviewRoleRules.reviewerCandidates(callerIdentityResolver.loginIdOf(httpRequest));
     }
 
     /**

@@ -8,7 +8,9 @@ import com.dodaso.ecosystem.elcm.entity.pipeline.ContractPackage;
 import com.dodaso.ecosystem.elcm.entity.pipeline.PackageDocument;
 import com.dodaso.ecosystem.elcm.entity.pipeline.Submission;
 import com.dodaso.ecosystem.elcm.entity.pipeline.SubmissionSendBack;
+import com.dodaso.ecosystem.auth.dto.UserDirectoryDTO;
 import com.dodaso.ecosystem.elcm.integration.ecws.EcwsTaskPublisher;
+import com.dodaso.ecosystem.elcm.service.pipeline.ReviewRoleRules;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionFieldResultRepository;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionFieldRevisionRepository;
 import com.dodaso.ecosystem.elcm.repository.extraction.ExtractionJobRepository;
@@ -95,6 +97,8 @@ public class ReviewStore {
   private final ReviewerSeparation reviewerSeparation;
   /** ADDED 2026-10-16: queues ECWS tasks for review events. */
   private final EcwsTaskPublisher ecwsTaskPublisher;
+  /** ADDED 2026-11-07: an approver must be available when the review is completed. */
+  private final ReviewRoleRules reviewRoleRules;
 
   /**
    * Saves one field: the corrected value (blank clears it) and whether the reviewer confirms it.
@@ -160,6 +164,29 @@ public class ReviewStore {
    */
   @Transactional
   public void complete(final Long packageId, final String caller) {
+    complete(packageId, caller, null);
+  }
+
+  /**
+   * ADDED 2026-11-07 -- the approver the reviewer would get now and the people the reviewer may
+   * choose instead, for the Complete review dialog. Nothing is saved. 404 no submission; 409 the
+   * package is not in review.
+   */
+  @Transactional(readOnly = true)
+  public ApproverPreview approverPreview(final Long packageId, final String caller) {
+    final Submission submission = reviewableSubmission(packageId);
+    return new ApproverPreview(
+        ecwsTaskPublisher.suggestedApprover(submission.getSubmittedBy(), caller).orElse(null),
+        reviewRoleRules.approverCandidates(submission.getSubmittedBy(), caller));
+  }
+
+  /**
+   * Completes the review with the approver the reviewer picked (null: ELCM picks). 412 when the
+   * picked person is not an eligible approver.
+   */
+  @Transactional
+  public void complete(
+      final Long packageId, final String caller, final String chosenApprover) {
     final Submission submission = reviewableSubmission(packageId);
     reviewerSeparation.check(submission, caller);
     int open = 0;
@@ -184,6 +211,10 @@ public class ReviewStore {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
           undefinedRoles + " document(s) still need a role.");
     }
+    // ADDED 2026-11-07: 412 when nobody could approve it (the two-person rule leaves no approver).
+    reviewRoleRules.checkReviewCompleted(submission, caller);
+    final String approver = chosenApprover == null || chosenApprover.isBlank() ? null
+        : reviewRoleRules.checkApprover(submission.getSubmittedBy(), caller, chosenApprover);
     final int moved = submissionRepository.complete(submission.getId(), submission.getStatus(),
         lkpSubmissionStatusRepository.findByCode(SUBMISSION_REVIEWED)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
@@ -193,7 +224,7 @@ public class ReviewStore {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "The review was already completed");
     }
     // ADDED 2026-10-16: the review task is done; the approver is next.
-    ecwsTaskPublisher.reviewCompleted(packageId, caller);
+    ecwsTaskPublisher.reviewCompleted(packageId, caller, approver);
   }
 
   /**
@@ -242,6 +273,41 @@ public class ReviewStore {
     sendBackRepository.save(row);
     // ADDED 2026-10-16: review again, and tell the person in charge.
     ecwsTaskPublisher.sentBack(packageId, caller, text);
+  }
+
+  /**
+   * ADDED 2026-11-07 -- people who may take over the approval: the Approver role, not the submitter
+   * and not the reviewer. 404 no submission; 409 the review is not completed (or already applied).
+   */
+  @Transactional(readOnly = true)
+  public List<UserDirectoryDTO> approverCandidates(final Long packageId) {
+    final Submission submission = awaitingApproval(packageId);
+    return reviewRoleRules.approverCandidates(submission.getSubmittedBy(),
+        submission.getReviewedBy());
+  }
+
+  /**
+   * ADDED 2026-11-07 -- changes who the approval task is assigned to, for a package whose review is
+   * completed and not yet applied. The new person must be an eligible approver (412 otherwise).
+   * The open ECWS approval task moves to them in the same transaction; the old approver stays on
+   * the task's member list. 404 no submission; 409 not waiting for approval. Returns the new
+   * approver's login id.
+   */
+  @Transactional
+  public String changeApprover(final Long packageId, final String newApprover, final String caller) {
+    final Submission submission = awaitingApproval(packageId);
+    final String login = reviewRoleRules.checkNewApprover(submission, newApprover);
+    ecwsTaskPublisher.approverChanged(packageId, login, caller);
+    return login;
+  }
+
+  private Submission awaitingApproval(final Long packageId) {
+    final Submission submission = newestSubmission(packageId);
+    if (!SUBMISSION_REVIEWED.equals(submission.getStatus().getCode())) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT,
+          "Only a package whose review is completed and not yet applied has an approver to change");
+    }
+    return submission;
   }
 
   /** The send-backs of the package's newest submission, newest first; empty when none. */

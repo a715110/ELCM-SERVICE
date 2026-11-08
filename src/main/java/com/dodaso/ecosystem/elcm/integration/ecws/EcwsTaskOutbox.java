@@ -74,6 +74,13 @@ public class EcwsTaskOutbox {
   @Column(name = "documents_text", length = 4000)
   private String documentsText;
 
+  /**
+   * ADDED 2026-11-07: login ids to put on the ECWS task's member list, separated by commas. CREATE
+   * and CLOSE rows. Nobody is ever removed from a task.
+   */
+  @Column(name = "member_logins", length = 1000)
+  private String memberLogins;
+
   @Column(name = "task_open", nullable = false)
   private boolean taskOpen;
 
