@@ -58,6 +58,8 @@ public class ContractPackageService {
                 d.getWorkspace(),
                 assignee,
                 d.getAssigneeLoginId(),
+                isBlank(d.getApprover()) ? null : displayNameOf(d.getApprover()),
+                isBlank(d.getApprover()) ? null : d.getApprover(),
                 d.getRolesAssigned() + "/" + d.getDocCount() + " roles",
                 d.getStatus(),
                 d.getStatusCode(),
@@ -103,7 +105,7 @@ public class ContractPackageService {
         activityRecorder.recordLater(created.getId(), ActivityEvent.PACKAGE_CREATED,
             () -> "Package " + created.getPackageCode() + " was created with " + plural(count, "document")
                 + (assigneeId != null && !assigneeId.isBlank()
-                    ? ", assigned to " + displayNameOf(assigneeId) + "." : "."));
+                    ? ", reviewer " + displayNameOf(assigneeId) + "." : "."));
         return created;
     }
 
@@ -169,7 +171,7 @@ public class ContractPackageService {
         // ADDED 2026-10-20 -- Activity Log
         final String assigneeId = request != null ? request.getAssigneeId() : null;
         activityRecorder.recordLater(packageId, ActivityEvent.ASSIGNEE_CHANGED,
-            () -> "Package was assigned to " + displayNameOf(assigneeId) + ".");
+            () -> "The reviewer was changed to " + displayNameOf(assigneeId) + ".");
     }
 
     /** ADDED 2026-10-20 -- "3 documents", "1 document". */
@@ -195,6 +197,10 @@ public class ContractPackageService {
         }
         final FileUploadDTO file = fileUploadLookupService.findByIds(Set.of(fileUploadId)).get(fileUploadId);
         return file != null && file.getFileName() != null ? file.getFileName() : FILE_UNAVAILABLE;
+    }
+
+    private static boolean isBlank(final String value) {
+        return value == null || value.isBlank();
     }
 
     private String displayNameOf(final String loginId) {

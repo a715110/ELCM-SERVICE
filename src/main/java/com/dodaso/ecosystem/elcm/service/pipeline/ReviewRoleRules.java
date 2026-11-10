@@ -56,11 +56,11 @@ public class ReviewRoleRules {
     final Optional<UserDirectoryDTO> assignee = directory.findByAssigneeId(assigneeId);
     final String reviewer = assignee.map(UserDirectoryDTO::getLoginId).orElse(null);
     if (reviewer == null) {
-      throw refused("The package assignee is not a known user. Assign the package to a person who"
+      throw refused("The package reviewer is not a known user. Assign the package to a person who"
           + " holds the " + props.getReviewerRole() + " role.");
     }
     if (separationOn && same(reviewer, submitter)) {
-      throw refused("The assignee cannot be the person who submits the package. Assign it to"
+      throw refused("The reviewer cannot be the person who submits the package. Assign it to"
           + " another " + props.getReviewerRole() + ".");
     }
     if (reviewerCandidates(submitter).stream().noneMatch(u -> same(u.getLoginId(), reviewer))) {
@@ -70,7 +70,7 @@ public class ReviewRoleRules {
     if (approverCandidates(submitter, reviewer).isEmpty()) {
       throw refused("No " + props.getApproverRole() + " is available for this package. At least one"
           + " person with the " + props.getApproverRole() + " role other than the submitter and the"
-          + " assignee is needed. Ask an administrator.");
+          + " reviewer is needed. Ask an administrator.");
     }
   }
 

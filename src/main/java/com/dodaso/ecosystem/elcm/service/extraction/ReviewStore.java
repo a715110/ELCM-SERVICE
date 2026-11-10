@@ -224,7 +224,15 @@ public class ReviewStore {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "The review was already completed");
     }
     // ADDED 2026-10-16: the review task is done; the approver is next.
-    ecwsTaskPublisher.reviewCompleted(packageId, caller, approver);
+    // ADDED 2026-11-09: the person who got the approval task is kept on the package, for the list.
+    setApprover(submission.getContractPackage(),
+        ecwsTaskPublisher.reviewCompleted(packageId, caller, approver));
+  }
+
+  /** ADDED 2026-11-09 -- keeps the approver on the package (null clears it). */
+  private void setApprover(final ContractPackage pkg, final String login) {
+    pkg.setApprover(login == null || login.isBlank() ? null : login.trim());
+    contractPackageRepository.save(pkg);
   }
 
   /**
@@ -298,6 +306,7 @@ public class ReviewStore {
     final Submission submission = awaitingApproval(packageId);
     final String login = reviewRoleRules.checkNewApprover(submission, newApprover);
     ecwsTaskPublisher.approverChanged(packageId, login, caller);
+    setApprover(submission.getContractPackage(), login);
     return login;
   }
 
@@ -376,6 +385,8 @@ public class ReviewStore {
       throw new ResponseStatusException(HttpStatus.CONFLICT,
           "The review was changed by someone else");
     }
+    // ADDED 2026-11-09: back in review, so there is no approver until the review is completed again.
+    setApprover(submission.getContractPackage(), null);
   }
 
   /**

@@ -17,6 +17,8 @@ public class ContractPackageDraft {
     private final String targetRecord;
     private final String workspace;
     private final String assigneeLoginId;
+    /** ADDED 2026-11-09 -- login id of the approver; null until the review is completed. */
+    private final String approver;
     private final long rolesAssigned;
     private final String status;
     private final String statusCode;

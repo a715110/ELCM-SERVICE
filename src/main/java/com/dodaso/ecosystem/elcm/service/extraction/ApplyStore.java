@@ -114,6 +114,10 @@ public class ApplyStore {
     }
     reviewerSeparation.checkApprover(submission, caller);
     final var chosenFor = submission.getContractPackage();
+    // ADDED 2026-11-09: the person who applies it is the one who approved it.
+    if (caller != null && !caller.isBlank()) {
+      chosenFor.setApprover(caller.trim());
+    }
     ContractRecord target = chosenFor.getTargetRecord();
     if (target == null) {
       target = chooseTarget(chosenFor, targetRecordId);

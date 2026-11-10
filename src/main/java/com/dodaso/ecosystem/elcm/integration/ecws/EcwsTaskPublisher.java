@@ -170,25 +170,30 @@ public class EcwsTaskPublisher {
     return picker.pick(props.getApproverRole(), excluded);
   }
 
-  /** The reviewer completed the review: the approver is next. */
+  /** The reviewer completed the review: the approver is next. Returns the approver's login id. */
   @Transactional
-  public void reviewCompleted(final Long packageId, final String reviewer) {
-    reviewCompleted(packageId, reviewer, null);
+  public String reviewCompleted(final Long packageId, final String reviewer) {
+    return reviewCompleted(packageId, reviewer, null);
   }
 
   /**
    * The reviewer completed the review. chosenApprover is the person the reviewer picked in the
-   * Complete review dialog (already checked by ReviewRoleRules); null lets ELCM pick.
+   * Complete review dialog (already checked by ReviewRoleRules); null lets ELCM pick. Returns the
+   * login id of the person who got the approval task (ADDED 2026-11-09, so ELCM can keep it on the
+   * package): the chosen approver, or the one ELCM picked. When the integration is off or the
+   * package cannot be read, the chosen approver is returned as it was given (null when none).
    */
   @Transactional
-  public void reviewCompleted(
+  public String reviewCompleted(
       final Long packageId, final String reviewer, final String chosenApprover) {
+    final String asChosen =
+        chosenApprover == null || chosenApprover.isBlank() ? null : chosenApprover.trim();
     if (!props.isEnabled()) {
-      return;
+      return asChosen;
     }
     final Ctx c = context(packageId);
     if (c == null) {
-      return;
+      return asChosen;
     }
     close(c, REVIEW, "Completed in ELCM by " + nz(reviewer), members(c, reviewer));
     close(c, FIX, "Review completed again in ELCM by " + nz(reviewer), members(c, reviewer));
@@ -200,6 +205,7 @@ public class EcwsTaskPublisher {
         "Review of package " + c.code + " (workspace " + c.workspace + ") was completed by "
             + nz(reviewer) + ". Approve it, or send it back with a reason. Open: " + reviewLink(packageId),
         members(c, reviewer, assignee));
+    return assignee;
   }
 
   /** The reviewer reopened a completed review: back to review. */

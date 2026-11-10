@@ -131,6 +131,7 @@ public class ContractPackageDataService {
                 target != null ? target.getRecordCode() : "Unassigned",
                 pkg.getWorkspace().getCode(),
                 pkg.getAssigneeId(),
+                pkg.getApprover(),
                 c[1],
                 pkg.getStatus().getLabel(),
                 pkg.getStatus().getCode(),
@@ -245,7 +246,7 @@ public class ContractPackageDataService {
     public void reassign(final Long packageId, final String assigneeId) {
         final String assignee = blankToNull(assigneeId);
         if (assignee == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Assignee is required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Reviewer is required");
         }
         final ContractPackage pkg = loadDraftPackage(packageId);
         pkg.setAssigneeId(assignee);
@@ -271,7 +272,7 @@ public class ContractPackageDataService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The package has no documents");
         }
         if (blankToNull(pkg.getAssigneeId()) == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The package has no assignee");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The package has no reviewer");
         }
         // ADDED 2026-11-07: 412 when the assignee cannot review it or nobody could approve it.
         reviewRoleRules.checkSubmit(callerLoginId, pkg.getAssigneeId());
