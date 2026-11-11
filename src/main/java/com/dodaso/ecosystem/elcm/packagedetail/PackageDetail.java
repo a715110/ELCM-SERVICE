@@ -10,7 +10,7 @@ import lombok.Setter;
  * ADDED 2026-10-25 -- everything the Package Details screen shows about one package.
  *
  * <p>statusCode is ASSEMBLY (draft), VALIDATED (submitted) or COMPLETED (closed); statusLabel is
- * the display text. relation is ASSIGNED, CREATED, SUBMITTER, REVIEWER or OTHER: how the viewer is
+ * the display text. relation is ASSIGNED, APPROVER, CREATED, SUBMITTER, REVIEWER or OTHER: how the viewer is
  * involved. Times are ISO, UTC, like the other times elcm-service sends. Names are display names
  * when they can be found, else the login id.
  */

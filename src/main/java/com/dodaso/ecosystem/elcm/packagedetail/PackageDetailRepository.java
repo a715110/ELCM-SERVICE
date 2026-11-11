@@ -20,7 +20,8 @@ public interface PackageDetailRepository extends Repository<ContractPackage, Lon
   @Query("select p.id as id, p.packageCode as packageCode, p.status.code as statusCode,"
       + " p.status.label as statusLabel, p.workspace.code as workspaceCode,"
       + " p.workspace.name as workspaceName, t.recordCode as targetRecord,"
-      + " p.assigneeId as assigneeId, p.createdBy as createdBy, p.createdAt as createdAt,"
+      + " p.assigneeId as assigneeId, p.approver as approver, p.createdBy as createdBy,"
+      + " p.createdAt as createdAt,"
       + " p.updatedBy as updatedBy, p.updatedAt as updatedAt"
       + " from ContractPackage p left join p.targetRecord t where p.id = :id")
   Optional<Header> findHeader(@Param("id") Long id);
@@ -35,12 +36,12 @@ public interface PackageDetailRepository extends Repository<ContractPackage, Lon
   List<SubmissionLine> findSubmissions(@Param("id") Long id);
 
   /**
-   * 1 when the person is involved in the package, else 0: assigned to it, created it, or submitted
-   * or reviewed one of its submissions. The same rule as "Mine" in the Package Rail. login is lower
+   * 1 when the person is involved in the package, else 0: assigned to it, its approver (ADDED
+   * 2026-11-09), created it, or submitted or reviewed one of its submissions. The same rule as "Mine" in the Package Rail. login is lower
    * case.
    */
   @Query("select count(p) from ContractPackage p where p.id = :id and (lower(p.assigneeId) = :login"
-      + " or lower(p.createdBy) = :login or p.id in (select s.contractPackage.id from Submission s"
+      + " or lower(p.approver) = :login or lower(p.createdBy) = :login or p.id in (select s.contractPackage.id from Submission s"
       + " where lower(s.submittedBy) = :login or lower(s.reviewedBy) = :login))")
   long countInvolved(@Param("id") Long id, @Param("login") String login);
 
@@ -62,6 +63,9 @@ public interface PackageDetailRepository extends Repository<ContractPackage, Lon
     String getTargetRecord();
 
     String getAssigneeId();
+
+    /** ADDED 2026-11-09 -- login id of the approver; null until the review is completed. */
+    String getApprover();
 
     String getCreatedBy();
 

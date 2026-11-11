@@ -79,6 +79,9 @@ public class PackageRailService {
     if (same(seen.line().getAssigneeId(), login)) {
       return "ASSIGNED";
     }
+    if (same(seen.line().getApprover(), login)) {
+      return "APPROVER";
+    }
     if (same(seen.line().getCreatedBy(), login)) {
       return "CREATED";
     }

@@ -140,6 +140,9 @@ public class PackageDetailService {
     if (same(header.getAssigneeId(), login)) {
       return "ASSIGNED";
     }
+    if (same(header.getApprover(), login)) {
+      return "APPROVER";
+    }
     if (same(header.getCreatedBy(), login)) {
       return "CREATED";
     }
