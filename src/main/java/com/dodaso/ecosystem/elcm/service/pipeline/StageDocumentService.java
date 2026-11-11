@@ -122,6 +122,8 @@ public class StageDocumentService {
     private final RecordProvisioningService recordProvisioningService;
     private final AssigneeDirectoryLookupService assigneeDirectoryLookupService;
     private final ElcmAiIndexer aiIndexer;
+    /** ADDED 2026-11-10: checks the reviewer named at upload. */
+    private final ReviewRoleRules reviewRoleRules;
 
     /**
      * Not transactional on purpose -- see class Javadoc. Delegates the DB
@@ -380,6 +382,15 @@ public class StageDocumentService {
                 "Missing default lkp_staged_document_status row for code: " + DEFAULT_STAGED_DOCUMENT_STATUS_CODE));
 
         final ContractRecord targetRecord = resolveTargetRecord(first, routingIntentCode, workspace, contractType);
+
+        // ADDED 2026-11-10: a person named at upload becomes the reviewer of the package these
+        // documents join, so they must be allowed to review. The login is stored as the directory
+        // spells it. 412 (shown to the user) when they cannot review; blank means not set.
+        final String reviewerLogin = reviewRoleRules.checkUploadReviewer(first.getUploadedBy(),
+            first.getAssigneeId());
+        for (final StagedDocumentDTO dto : requested) {
+            dto.setAssigneeId(reviewerLogin);
+        }
 
         final LocalDateTime uploadedAt = LocalDateTime.now(ZoneOffset.UTC);
 

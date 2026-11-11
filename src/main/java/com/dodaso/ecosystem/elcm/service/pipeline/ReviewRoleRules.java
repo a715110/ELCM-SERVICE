@@ -74,6 +74,38 @@ public class ReviewRoleRules {
     }
   }
 
+  /**
+   * A reviewer named when documents are uploaded (ADDED 2026-11-10). The person must be a known
+   * user who holds the reviewer role and, with the two-person rule on, is not the uploader.
+   * Returns the login id as the directory spells it, so the document and the package it later
+   * joins hold the same value. Unlike {@link #checkSubmit} this does not ask for an approver: that
+   * is still checked when the package is submitted. A blank value returns null (no reviewer set).
+   * With elcm.ecws.validate-roles=false only the directory spelling is resolved.
+   */
+  public String checkUploadReviewer(final String uploader, final String chosen) {
+    if (chosen == null || chosen.isBlank()) {
+      return null;
+    }
+    final Optional<UserDirectoryDTO> found = directory.findByAssigneeId(chosen);
+    final String login = found.map(UserDirectoryDTO::getLoginId).orElse(null);
+    if (!props.isValidateRoles()) {
+      return login != null ? login : chosen.trim();
+    }
+    if (login == null) {
+      throw refused("The reviewer is not a known user. Choose a person who holds the "
+          + props.getReviewerRole() + " role.");
+    }
+    if (separationOn && same(login, uploader)) {
+      throw refused("The reviewer cannot be the person who uploads the documents. Choose another "
+          + props.getReviewerRole() + ".");
+    }
+    if (reviewerCandidates(uploader).stream().noneMatch(u -> same(u.getLoginId(), login))) {
+      throw refused(nameOf(found.get()) + " does not hold the " + props.getReviewerRole()
+          + " role. Choose a person who does.");
+    }
+    return login;
+  }
+
   /** When a review is completed: someone must be left who may approve it. 412 otherwise. */
   public void checkReviewCompleted(final Submission submission, final String reviewer) {
     if (!props.isValidateRoles()) {
