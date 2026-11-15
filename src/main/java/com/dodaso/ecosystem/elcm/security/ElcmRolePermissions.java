@@ -19,14 +19,17 @@ public final class ElcmRolePermissions {
 
   static {
     Set<ElcmPermission> all = EnumSet.allOf(ElcmPermission.class);
-    Set<ElcmPermission> viewOnly = EnumSet.of(ElcmPermission.PIPELINE_VIEW);
+    Set<ElcmPermission> viewOnly =
+        EnumSet.of(ElcmPermission.PIPELINE_VIEW, ElcmPermission.REASSESSMENT_VIEW);
     // The submitting roles may delete. StageDocumentService limits it to documents they uploaded.
     Set<ElcmPermission> viewSubmitAndDelete =
         EnumSet.of(
             ElcmPermission.PIPELINE_VIEW,
             ElcmPermission.PIPELINE_SUBMIT,
             ElcmPermission.PIPELINE_DELETE,
-            ElcmPermission.PIPELINE_CLASSIFY);
+            ElcmPermission.PIPELINE_CLASSIFY,
+            ElcmPermission.REASSESSMENT_VIEW,
+            ElcmPermission.REASSESSMENT_MANAGE);
 
     put("Super Admin", all);
     put("System Admin", all);
@@ -39,9 +42,17 @@ public final class ElcmRolePermissions {
         EnumSet.of(
             ElcmPermission.PIPELINE_VIEW,
             ElcmPermission.PIPELINE_REVIEW,
-            ElcmPermission.PIPELINE_CLASSIFY));
+            ElcmPermission.PIPELINE_CLASSIFY,
+            ElcmPermission.REASSESSMENT_VIEW,
+            ElcmPermission.REASSESSMENT_ASSESS));
     // Approvers approve and apply a completed review. They do not edit values.
-    put("Approver", EnumSet.of(ElcmPermission.PIPELINE_VIEW, ElcmPermission.PIPELINE_APPROVE));
+    put(
+        "Approver",
+        EnumSet.of(
+            ElcmPermission.PIPELINE_VIEW,
+            ElcmPermission.PIPELINE_APPROVE,
+            ElcmPermission.REASSESSMENT_VIEW,
+            ElcmPermission.REASSESSMENT_APPROVE));
     put("Accountant", viewOnly);
     put("Controller", viewOnly);
     put("Auditor", viewOnly);

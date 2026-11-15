@@ -429,6 +429,11 @@
       <artifactId>spring-cloud-azure-starter-keyvault-secrets</artifactId>
     </dependency>
     <dependency>
+      <groupId>com.dodaso.ecosystem.perf</groupId>
+      <artifactId>perf-monitor</artifactId>
+      <version>${revision}</version>
+    </dependency>
+    <dependency>
       <artifactId>baseline-common</artifactId>
       <groupId>com.dodaso.ecosystem.baseline.common</groupId>
       <version>${revision}</version>
@@ -437,7 +442,7 @@
       <artifactId>common-data-model</artifactId>
       <groupId>com.dodaso.ecosystem.common.data.model</groupId>
       <version>${revision}</version>
-    </dependency>  
+    </dependency>
     <dependency>
       <artifactId>ecws-data-model</artifactId>
       <groupId>com.dodaso.ecosystem.ecws.data.model</groupId>
@@ -504,4 +509,4 @@
       <url>s3://dodaso-maven-repo/release</url>
     </repository>
   </distributionManagement>-->
-</project>
+</project>

@@ -59,6 +59,12 @@ public class ProfileController {
       case PIPELINE_CLASSIFY ->
           "Set the role of a document in a package, such as lease or amendment";
       case TEMPLATE_MANAGE -> "Create, publish and compare extraction templates";
+      case REASSESSMENT_VIEW -> "See lease reassessments";
+      case REASSESSMENT_MANAGE ->
+          "Open a lease reassessment, send its survey, link a replacement record or close it";
+      case REASSESSMENT_ASSESS -> "Write and submit the conclusion of a lease reassessment";
+      case REASSESSMENT_APPROVE -> "Approve or send back a lease reassessment conclusion";
+      case SURVEY_ADMIN -> "Create, edit and publish the surveys used by lease reassessments";
     };
   }
 }

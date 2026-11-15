@@ -46,7 +46,25 @@ public enum ElcmPermission {
    * Create, edit, publish and compare extraction template versions. Held by System Admin and Super
    * Admin only (they get every permission in ElcmRolePermissions).
    */
-  TEMPLATE_MANAGE("template:manage");
+  TEMPLATE_MANAGE("template:manage"),
+
+  /** See reassessment cases (ADDED 2026-11-11). */
+  REASSESSMENT_VIEW("reassessment:view"),
+
+  /** Open a reassessment, send its survey, link a replacement, close it. */
+  REASSESSMENT_MANAGE("reassessment:manage"),
+
+  /** Write and submit the conclusion of a reassessment. */
+  REASSESSMENT_ASSESS("reassessment:assess"),
+
+  /** Approve or reject a submitted conclusion. */
+  REASSESSMENT_APPROVE("reassessment:approve"),
+
+  /**
+   * ADDED 2026-11-13. Create, edit, publish and delete the surveys used by reassessments. Held by
+   * System Admin and Super Admin only (they get every permission in ElcmRolePermissions).
+   */
+  SURVEY_ADMIN("survey:admin");
 
   private final String code;
 
