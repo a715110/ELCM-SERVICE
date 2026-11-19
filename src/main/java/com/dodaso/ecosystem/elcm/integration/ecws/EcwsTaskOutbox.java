@@ -42,8 +42,17 @@ public class EcwsTaskOutbox {
   @Column(name = "event_code", nullable = false, length = 10)
   private String eventCode;
 
-  @Column(name = "package_id", nullable = false)
+  /** REVISED 2026-11-16: null for a critical date task, which belongs to a record, not a package. */
+  @Column(name = "package_id")
   private Long packageId;
+
+  /** ADDED 2026-11-16: the contract record of a critical date task; null for package tasks. */
+  @Column(name = "record_id")
+  private Long recordId;
+
+  /** ADDED 2026-11-16: the ECWS section of a critical date task (CD-ruleId-termId). */
+  @Column(name = "section_key", length = 50)
+  private String sectionKey;
 
   @Column(name = "package_code", length = 60)
   private String packageCode;

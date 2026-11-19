@@ -27,9 +27,16 @@ public class EcwsTaskClient {
   public ExternalTaskResultDTO send(final EcwsTaskOutbox row) throws Exception {
     final ExternalTaskRequestDTO request = new ExternalTaskRequestDTO();
     request.setSubsystemId(SUBSYSTEM);
-    request.setExternalRefPk(Math.toIntExact(row.getPackageId()));
-    request.setUiPageId("package");
-    request.setUiSectionId(row.getEventCode());
+    if (row.getRecordId() != null) {
+      // ADDED 2026-11-16: a critical date task is tied to a contract record, one section per date.
+      request.setExternalRefPk(Math.toIntExact(row.getRecordId()));
+      request.setUiPageId("record");
+      request.setUiSectionId(row.getSectionKey());
+    } else {
+      request.setExternalRefPk(Math.toIntExact(row.getPackageId()));
+      request.setUiPageId("package");
+      request.setUiSectionId(row.getEventCode());
+    }
     final String endpoint;
     switch (row.getAction()) {
       case EcwsTaskOutbox.CREATE -> {
@@ -85,6 +92,7 @@ public class EcwsTaskClient {
       case EcwsTaskPublisher.APPROVAL -> "ELCM Approval";
       case EcwsTaskPublisher.FIX -> "ELCM Fix";
       case EcwsTaskPublisher.FAILED -> "ELCM Extraction Failed";
+      case EcwsTaskPublisher.CRITDATE -> "ELCM Critical Date";
       default -> throw new IllegalStateException("Unknown event code " + eventCode);
     };
   }

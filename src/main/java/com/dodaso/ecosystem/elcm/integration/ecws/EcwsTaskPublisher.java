@@ -59,6 +59,8 @@ public class EcwsTaskPublisher {
   public static final String APPROVAL = "APPROVAL";
   public static final String FIX = "FIX";
   public static final String FAILED = "FAILED";
+  /** ADDED 2026-11-16: a critical date of a contract record (see CriticalDatePublisher). */
+  public static final String CRITDATE = "CRITDATE";
 
   private static final String MEDIUM = "Medium";
   private static final String HIGH = "High";

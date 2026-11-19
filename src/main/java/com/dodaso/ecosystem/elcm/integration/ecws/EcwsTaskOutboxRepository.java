@@ -61,6 +61,25 @@ public interface EcwsTaskOutboxRepository extends JpaRepository<EcwsTaskOutbox, 
   /** How many open tasks a person holds, as far as ELCM knows. Used to pick the least loaded. */
   long countByActionAndTaskOpenTrueAndAssigneeLoginIgnoreCase(String action, String assigneeLogin);
 
+  /**
+   * ADDED 2026-11-16: like the count above but leaving out one event. Critical date tasks are
+   * left out of the workload, so a person is not seen as busy for a task due months away.
+   */
+  long countByActionAndTaskOpenTrueAndEventCodeNotAndAssigneeLoginIgnoreCase(String action,
+      String eventCode, String assigneeLogin);
+
+  /** ADDED 2026-11-16: marks the open critical date task of one record and section as closed. */
+  @Transactional
+  @Modifying
+  @Query("update EcwsTaskOutbox o set o.taskOpen = false where o.recordId = :recordId"
+      + " and o.sectionKey = :sectionKey and o.action = 'CREATE' and o.taskOpen = true")
+  int closeOpenForRecord(@Param("recordId") Long recordId,
+      @Param("sectionKey") String sectionKey);
+
+  /** ADDED 2026-11-16: true when an earlier row of the same record is still waiting or sending. */
+  boolean existsByRecordIdAndIdLessThanAndStatusIn(Long recordId, Long id,
+      Collection<String> statuses);
+
   /** True when an earlier row of the same package is still waiting or being sent. */
   boolean existsByPackageIdAndIdLessThanAndStatusIn(Long packageId, Long id,
       Collection<String> statuses);

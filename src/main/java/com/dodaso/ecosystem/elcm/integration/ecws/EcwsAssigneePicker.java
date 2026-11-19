@@ -38,8 +38,9 @@ public class EcwsAssigneePicker {
       if (login == null || login.isBlank() || isExcluded(login, excluded)) {
         continue;
       }
-      final long load = outbox.countByActionAndTaskOpenTrueAndAssigneeLoginIgnoreCase(
-          EcwsTaskOutbox.CREATE, login);
+      // REVISED 2026-11-16: critical date tasks do not count as workload.
+      final long load = outbox.countByActionAndTaskOpenTrueAndEventCodeNotAndAssigneeLoginIgnoreCase(
+          EcwsTaskOutbox.CREATE, EcwsTaskPublisher.CRITDATE, login);
       if (load < bestLoad) {
         best = login;
         bestLoad = load;

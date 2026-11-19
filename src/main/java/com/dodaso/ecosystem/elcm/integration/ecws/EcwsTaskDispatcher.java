@@ -48,8 +48,7 @@ public class EcwsTaskDispatcher {
     final List<EcwsTaskOutbox> due = outbox.findDue(now, PageRequest.of(0, props.getBatchSize()));
     int sent = 0;
     for (final EcwsTaskOutbox row : due) {
-      if (outbox.existsByPackageIdAndIdLessThanAndStatusIn(row.getPackageId(), row.getId(),
-          List.of(EcwsTaskOutbox.PENDING, EcwsTaskOutbox.SENDING))) {
+      if (waitsForEarlierRow(row)) {
         continue;
       }
       if (outbox.claim(row.getId(), now()) != 1) {
@@ -60,6 +59,23 @@ public class EcwsTaskDispatcher {
       }
     }
     return sent;
+  }
+
+  /**
+   * REVISED 2026-11-16: rows of one package go out in order, and so do the rows of one record (a
+   * critical date task has a record and no package). A row without either has nothing to wait for.
+   */
+  private boolean waitsForEarlierRow(final EcwsTaskOutbox row) {
+    final List<String> busy = List.of(EcwsTaskOutbox.PENDING, EcwsTaskOutbox.SENDING);
+    if (row.getPackageId() != null) {
+      return outbox.existsByPackageIdAndIdLessThanAndStatusIn(row.getPackageId(), row.getId(),
+          busy);
+    }
+    if (row.getRecordId() != null) {
+      return outbox.existsByRecordIdAndIdLessThanAndStatusIn(row.getRecordId(), row.getId(),
+          busy);
+    }
+    return false;
   }
 
   private boolean sendOne(final EcwsTaskOutbox row) {
@@ -89,8 +105,9 @@ public class EcwsTaskDispatcher {
     fresh.setLastError(cut(error.getClass().getSimpleName() + ": " + error.getMessage()));
     if (attempts >= props.getMaxAttempts()) {
       fresh.setStatus(EcwsTaskOutbox.FAILED);
-      log.error("ECWS: request {} ({} {} for package {}) failed {} times; marked FAILED",
-          fresh.getId(), fresh.getAction(), fresh.getEventCode(), fresh.getPackageId(), attempts);
+      log.error("ECWS: request {} ({} {} for package {} record {}) failed {} times; marked FAILED",
+          fresh.getId(), fresh.getAction(), fresh.getEventCode(), fresh.getPackageId(),
+          fresh.getRecordId(), attempts);
     } else {
       fresh.setStatus(EcwsTaskOutbox.PENDING);
       fresh.setNextAttemptAt(now().plusSeconds(delaySeconds(attempts)));
