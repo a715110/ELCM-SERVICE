@@ -64,7 +64,14 @@ public enum ElcmPermission {
    * ADDED 2026-11-13. Create, edit, publish and delete the surveys used by reassessments. Held by
    * System Admin and Super Admin only (they get every permission in ElcmRolePermissions).
    */
-  SURVEY_ADMIN("survey:admin");
+  SURVEY_ADMIN("survey:admin"),
+
+  /**
+   * ADDED 2026-11-21. Add, change, switch on or off and delete the critical date rules, and run
+   * the critical date check now. Held by System Admin and Super Admin only (they get every
+   * permission in ElcmRolePermissions).
+   */
+  CRITICAL_DATE_ADMIN("criticaldate:admin");
 
   private final String code;
 

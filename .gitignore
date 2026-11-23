@@ -56,3 +56,13 @@ bin/
 build/
 dist/
 target/
+
+# Secrets and keys never go into git
+.env
+.env.*
+*.p12
+*.jks
+*.pem
+*.key
+application-secret*.properties
+application-secret*.yml

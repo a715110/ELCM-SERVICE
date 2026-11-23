@@ -65,6 +65,8 @@ public class ProfileController {
       case REASSESSMENT_ASSESS -> "Write and submit the conclusion of a lease reassessment";
       case REASSESSMENT_APPROVE -> "Approve or send back a lease reassessment conclusion";
       case SURVEY_ADMIN -> "Create, edit and publish the surveys used by lease reassessments";
+      case CRITICAL_DATE_ADMIN ->
+          "Set up the critical date rules that turn contract dates into ECWS tasks";
     };
   }
 }
