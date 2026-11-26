@@ -7,8 +7,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * ADDED 2026-10-25 -- settings of the address check, bound from {@code elcm.address-verification.*}.
- * The USPS keys come from the environment (USPS_CLIENT_ID, USPS_CLIENT_SECRET) and are never
- * written to a file that goes to GitHub.
+ * The Geocodio key comes from the environment (GEOCODIO_API_KEY) and is never written to a file
+ * that goes to GitHub. REVISED 2026-11-24: the unused USPS settings were removed.
  */
 @Getter
 @Setter
@@ -19,15 +19,8 @@ public class AddressVerificationProperties {
   /** Master switch. When false the button answers "not available". */
   private boolean enabled = true;
 
-  /** Which provider answers: geocodio (the demo choice) or usps. */
+  /** Which provider answers. Only geocodio exists now; another one is added as a new provider. */
   private String provider = "geocodio";
-
-  /** USPS API root. */
-  private String uspsBaseUrl = "https://apis.usps.com";
-
-  private String uspsClientId;
-
-  private String uspsClientSecret;
 
   /** Geocodio API root (the version is part of it) and the key, from the environment. */
   private String geocodioBaseUrl = "https://api.geocod.io/v2";

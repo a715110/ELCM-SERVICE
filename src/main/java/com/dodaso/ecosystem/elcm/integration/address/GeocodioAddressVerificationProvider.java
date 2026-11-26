@@ -14,9 +14,9 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
 /**
- * ADDED 2026-10-25 -- the address check used for the demo while the USPS keys are not available:
- * Geocodio (free tier of about 2,500 lookups a day, US addresses). It cleans, standardizes and
- * geocodes an address. It is not USPS certified and does no delivery point check, so "found" means
+ * ADDED 2026-10-25 -- the address check: Geocodio (free tier of about 2,500 lookups a day, US
+ * addresses). It cleans, standardizes and geocodes an address. It is not USPS certified and does no
+ * delivery point check, so "found" means
  * a house-level match, not proof that the mail carrier delivers there.
  *
  * <p>The typed address is sent as one {@code q} string. A result counts as found only when its

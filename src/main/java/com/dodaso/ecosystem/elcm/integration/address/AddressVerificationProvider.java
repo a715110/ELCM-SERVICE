@@ -1,9 +1,9 @@
 package com.dodaso.ecosystem.elcm.integration.address;
 
 /**
- * ADDED 2026-10-25 -- one address check service behind the Verify address button. The demo uses
- * USPS ({@link UspsAddressVerificationProvider}); a paid service with type-ahead and non US
- * addresses is added later as another implementation, chosen with elcm.address-verification.provider.
+ * ADDED 2026-10-25 -- one address check service behind the Verify address button. It is answered
+ * by {@link GeocodioAddressVerificationProvider}; a paid service with type-ahead and non US
+ * addresses can be added later as another implementation, chosen with elcm.address-verification.provider.
  * An implementation never throws for a normal "not found" or "not available" case: it returns the
  * matching {@link AddressVerifyResult} status.
  */

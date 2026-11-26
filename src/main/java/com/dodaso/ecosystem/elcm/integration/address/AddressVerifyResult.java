@@ -32,7 +32,7 @@ public class AddressVerifyResult {
   /** The four digits after the ZIP, when the provider knows them. */
   private String zipPlus4;
 
-  /** Which provider answered, for example USPS. */
+  /** Which provider answered, for example Geocodio. */
   private String provider;
 
   public static AddressVerifyResult of(final String status, final String message,
